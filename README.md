@@ -1,5 +1,5 @@
-# surface_morphometrics
-### Morphometrics of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
+# Surface Morphometrics
+### Quantification of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
 Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*
 
 A collection of tools to generate robust open mesh surfaces from voxel segmentations of biological membranes
