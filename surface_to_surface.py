@@ -9,6 +9,7 @@ import vtk
 
 from sys import argv
 from os import path
+from time import sleep
 
 folder = "/gpfs/group/grotjahn/bbarad/Final_Dataset/"
 rh_level = 12
@@ -33,7 +34,7 @@ def save_ply(poly, fname):
     writer.SetInputData(poly)
     writer.Write()
 
-def get_dist_two_directions(point, normal, locator, dist_min=3, dist_max=200, tolerance=0.1):
+def get_dist_two_directions(point, normal, locator, xyz, dist_min=3, dist_max=400, tolerance=0.1, ):
     """Returns the distance and cell ID from a certain point along both the 
     positive and normal axis
 
@@ -47,30 +48,38 @@ def get_dist_two_directions(point, normal, locator, dist_min=3, dist_max=200, to
     positions = []
     distances = []
     cell_ids = []
-    for direction in [normal, -normal]:
+    for direction in [-normal, normal]:
+        
         p0 = point + direction*dist_min
         pmax = point + direction*dist_max
-        p1 = [-1.,-1.,-1.]
-        sub_id = vtk.mutable(-1.)
-        cell1_id = vtk.mutable(-1.)
-        t = vtk.mutable(-1.) # parametric coordinate of the intersection - 0 to 1 if intersection is found
-        locator.IntersectWithLine(p0, pmax, tolerance, t, p1, [-1,-1,-1], sub_id,
+        p1 = [0.,0.,0.]
+        pcoords = [0,0,0]
+        sub_id = vtk.mutable(-1)
+        cell1_id = vtk.mutable(-1)
+        t = vtk.mutable(0.) # parametric coordinate of the intersection - 0 to 1 if intersection is found
+        locator.IntersectWithLine(p0, pmax, tolerance, t, p1, pcoords, sub_id,
                               cell1_id)
-        if t.value == -1:
-            distances.append(t.value)
+        distance = np.linalg.norm(p1-point)
+        if cell1_id == -1:
+            # No intersection
+            distances.append(-1.)
+            cell_ids.append(-1)
+        elif distance > dist_max+1 or distance < dist_min-1: # Tolerance adjustment
+            distances.append(-1.)
+            cell_ids.append(-1)       
         else:
-            distances.append(t.value*(dist_max-dist_min)+dist_min) # distance in the direction of the normal
-        positions.append(p1)
-        cell_ids.append(cell1_id.value)
+            distances.append(np.linalg.norm(p1-point)) # distance in the direction of the normal
+            cell_ids.append(int(cell1_id))
     # switch orders if the first distance is larger:
-    if distances[0] > distances[1]:
+    if distances[0] > distances[1] or distances[0] == -1:
         distances = distances[::-1]
-        positions = positions[::-1]
         cell_ids = cell_ids[::-1]
+    
     # close dist, close id, far dist, far id
+    assert distances[1] == -1 or distances[1] > distances[0]
     return distances[0], cell_ids[0], distances[1], cell_ids[1] 
 
-def surface_self_distances(graph_file, surface_file, dist_min=3, dist_max=200, tolerance=0.1, export_csv=True):
+def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=200, tolerance=0.1, exportcsv=True):
     """Returns the distances between all vertices of two surfaces - 
     inspired by find_1_distance in pycurv
 
@@ -81,24 +90,29 @@ def surface_self_distances(graph_file, surface_file, dist_min=3, dist_max=200, t
     tolerance: tolerance for the distance calculation (recommended to be 0.1)
     """
     # Initialize stuff
+    print("Loading graph and surface")
     surface = io.load_poly(surface_file)
-    locator = vtk.vtkCellLocator()
-    locator.SetDataSet(surface_file)
+    locator = vtk.vtkStaticCellLocator()
+    locator.SetDataSet(surface)
     locator.BuildLocator()
     tg = TriangleGraph()
     tg.graph = load_graph(graph_file)
     xyz = tg.graph.vp.xyz.get_2d_array([0,1,2]).transpose()
     normal = tg.graph.vp.n_v.get_2d_array([0,1,2]).transpose() # use n_v for voted normals
     # Initialize variables
-    close_distances = tg.graph.new_vertex_property("double")
-    close_id = tg.graph.new_vertex_property("int")
-    far_distances = tg.graph.new_vertex_property("double")
-    far_id = tg.graph.new_vertex_property("int")
+    print("Initializing variables")
+    close_distances = tg.graph.new_vertex_property("float")
+    close_id = tg.graph.new_vertex_property("long")
+    far_distances = tg.graph.new_vertex_property("float")
+    far_id = tg.graph.new_vertex_property("long")
     # Vectorized distance processor
-    get_distances = np.vectorize(get_dist_two_directions, exclude=["locator", "dist_min", "dist_max", "tolerance"])
     # Calculate distances
-    close_distances, close_id, far_distances, far_id = get_distances(xyz, normal, locator, dist_min, dist_max, tolerance)
+    print("Calculating distances")
+    for i in range(len(close_distances.a)):
+        close_distances.a[i], close_id.a[i], far_distances.a[i], far_id.a[i] = get_dist_two_directions(xyz[i], normal[i], locator, xyz, dist_min, dist_max, tolerance=0.001)
     # Write out distances
+    print(close_distances.a.min(), close_distances.a.max())
+    print("Writing out distances")
     tg.graph.vp.self_dist_min = close_distances
     tg.graph.vp.self_id_min = close_id
     tg.graph.vp.self_dist_far = far_distances
@@ -106,13 +120,13 @@ def surface_self_distances(graph_file, surface_file, dist_min=3, dist_max=200, t
     # Save graph
     tg.graph.save(graph_file)
     # Save CSV with all features
-    if export_csv:
+    if exportcsv:
         csvname = graph_file[:-4]+".csv"
         export_csv(tg, csvname)
     return tg
 
 
-def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface2, surface2_name, save_neighbor_index=True):
+def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface2, surface2_name, save_neighbor_index=True, exportcsv=True):
     """ Measure the nearest distance to graph2 for every point on graph1.
     Bidirectional - data is written to both graphs, and new VTP files are output.
     
@@ -182,9 +196,9 @@ def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface
     save_ply(surf1, ply_name)
     tg1.graph.save(graph1)
     # Save CSV
-    if export_csv:
+    if exportcsv:
         csvname = graph1[:-3]+".csv"
-        export_csv(tg1,csvname)
+        exportcsv(tg1,csvname)
     # Save updated surface and tranglegraph
     surf2 = tg2.graph_to_triangle_poly()
     io.save_vtp(surf2, surface2)
@@ -192,7 +206,7 @@ def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface
     save_ply(surf2, ply_name)
     tg2.graph.save(graph2)
 
-    if export_csv:
+    if exportcsv:
         csvname = graph2[:-3]+".csv"
         export_csv(tg2, csvname)
 
@@ -234,7 +248,7 @@ if __name__=="__main__":
     er_surface = folder+basename+"_ER.AVV_rh{}.vtp".format(rh_level)
     if path.isfile(imm_graph):
         print("Calculating IMM-IMM distances")
-        surface_self_distances(imm_graph, imm_surface, dist_min=3, dist_max=200)
+        surface_self_distances(imm_graph, imm_surface, dist_min=4, dist_max=400, tolerance=0.001)
     if path.isfile(omm_graph):
         if path.isfile(imm_graph):
             print("Measuring OMM-IMM Distances")
