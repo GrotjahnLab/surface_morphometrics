@@ -11,9 +11,11 @@ using pycurv's vector voting framework, and tools to convert these morphological
 1. Numpy
 2. Scipy
 3. Pandas
-4. Pyto
-5. Graph-tool
-6. Pycurv
+4. Pycurv   
+    1. Pyto
+    2. Graph-tool
+5. Click
+6. Matplotlib
 
 ## Organization
 1. Robust Mesh Generation
