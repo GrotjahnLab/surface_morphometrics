@@ -13,6 +13,7 @@ from os import path
 folder = "/gpfs/group/grotjahn/bbarad/Final_Dataset/"
 rh_level = 12
 basename = argv[1][:-11]
+
 print(basename)
 
 # folder = "/Users/benjaminbarad/Dropbox (Scripps Research)/Surface_analysis/"
@@ -231,7 +232,9 @@ if __name__=="__main__":
     imm_surface = folder+basename+"_IMM.AVV_rh{}.vtp".format(rh_level)
     er_graph = folder+basename+"_ER.AVV_rh{}.gt".format(rh_level)
     er_surface = folder+basename+"_ER.AVV_rh{}.vtp".format(rh_level)
-
+    if path.isfile(imm_graph):
+        print("Calculating IMM-IMM distances")
+        surface_self_distances(imm_graph, imm_surface, dist_min=3, dist_max=200)
     if path.isfile(omm_graph):
         if path.isfile(imm_graph):
             print("Measuring OMM-IMM Distances")
