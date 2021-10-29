@@ -38,7 +38,8 @@ def convert_mitochondria(input_filename):
 		df.to_csv(output, sep=" ", index=False, header=False)
 
 if __name__=="__main__":
-	data = glob.glob("*_labels.mrc")
+	# data = glob.glob("*_labels.mrc")
+	data = ["TT9_labels.mrc"]
 	for datum in data:
 		print(datum)
 		convert_mitochondria(datum)

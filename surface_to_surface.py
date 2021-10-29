@@ -61,23 +61,30 @@ def get_dist_two_directions(point, normal, locator, xyz, dist_min=3, dist_max=40
                               cell1_id)
         distance = np.linalg.norm(p1-point)
         if cell1_id == -1:
-            # No intersection
-            distances.append(-1.)
+            distances.append(np.nan)
             cell_ids.append(-1)
         elif distance > dist_max+1 or distance < dist_min-1: # Tolerance adjustment
-            distances.append(-1.)
+            distances.append(np.nan)
             cell_ids.append(-1)       
         else:
             distances.append(np.linalg.norm(p1-point)) # distance in the direction of the normal
             cell_ids.append(int(cell1_id))
     # switch orders if the first distance is larger:
-    if distances[0] > distances[1] or distances[0] == -1:
+    if np.isnan(distances[0]):
+        distances = distances[::-1]
+        cell_ids = cell_ids[::-1]
+    elif np.isnan(distances[1]):
+        # Only one distance
+        pass
+    elif distances[0] > distances[1]:
+        # print("Distances misordered, flipping")
         distances = distances[::-1]
         cell_ids = cell_ids[::-1]
     
     # close dist, close id, far dist, far id
-    assert distances[1] == -1 or distances[1] > distances[0]
-    return distances[0], cell_ids[0], distances[1], cell_ids[1] 
+    assert np.isnan(distances[1]) or distances[0]<=distances[1]
+    
+    return distances[0], cell_ids[0], distances[1], cell_ids[1]
 
 def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=200, tolerance=0.1, exportcsv=True):
     """Returns the distances between all vertices of two surfaces - 
@@ -111,7 +118,7 @@ def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=200, t
     for i in range(len(close_distances.a)):
         close_distances.a[i], close_id.a[i], far_distances.a[i], far_id.a[i] = get_dist_two_directions(xyz[i], normal[i], locator, xyz, dist_min, dist_max, tolerance=0.001)
     # Write out distances
-    print(close_distances.a.min(), close_distances.a.max())
+    print(np.nanmin(close_distances.a), np.nanmax(close_distances.a))
     print("Writing out distances")
     tg.graph.vp.self_dist_min = close_distances
     tg.graph.vp.self_id_min = close_id
@@ -121,7 +128,8 @@ def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=200, t
     tg.graph.save(graph_file)
     # Save CSV with all features
     if exportcsv:
-        csvname = graph_file[:-4]+".csv"
+        csvname = graph_file[:-3]+".csv"
+        print(csvname)
         export_csv(tg, csvname)
     return tg
 
@@ -198,7 +206,7 @@ def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface
     # Save CSV
     if exportcsv:
         csvname = graph1[:-3]+".csv"
-        exportcsv(tg1,csvname)
+        export_csv(tg1,csvname)
     # Save updated surface and tranglegraph
     surf2 = tg2.graph_to_triangle_poly()
     io.save_vtp(surf2, surface2)
@@ -212,6 +220,7 @@ def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface
 
 def export_csv(tg, csvname):
     """Export all properties in a triangle graph to a CSV with indices for quick visualization with other programs"""
+    print(f"Exporting graph data to CSV {csvname}")
     df = pandas.DataFrame()
     vector_properties = []
     scalar_properties = []
@@ -255,6 +264,7 @@ if __name__=="__main__":
             surface_to_surface_distance(omm_graph, omm_surface, "OMM", imm_graph, imm_surface, "IMM")
         else:
             print("No IMM Found - Skipping OMM-IMM Distances")
+        
         if path.isfile(er_graph):
             print("Measuring OMM-ER Distances")
             surface_to_surface_distance(omm_graph, omm_surface, "OMM", er_graph, er_surface, "ER")
