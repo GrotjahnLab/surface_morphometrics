@@ -1,11 +1,12 @@
 from curvature_calculation import from_ply_workflow, new_workflow, extract_curvatures_after_new_workflow
 import time
+from sys import argv
 
 t_begin = time.time()
 fold = r"/gpfs/group/grotjahn/bbarad/Surface_analysis/" # output will be also written there
 base_filename = "TE1_ER"
 #surf_file = "TE2_OMM.ply"
-seg_file = ""
+seg_file = 
 # surf_file = 
 #lbl=1
 #holes=5

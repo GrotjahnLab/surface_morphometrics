@@ -9,7 +9,8 @@ from scipy.ndimage.morphology import distance_transform_edt
 import mrcfile
 import vtk
 
-TOLERANCE_DISTANCE_NM=4.5 # Heuristic to get complete surfaces but avoid spurious junk
+TOLERANCE_DISTANCE_NM=2 # Heuristic to get complete surfaces but avoid spurious junk
+# Closed in for TgGSK because it was spurious junk!
 
 @click.command()
 @click.argument('input_surfaces', type=str, nargs=-1)
@@ -107,8 +108,8 @@ def convert(input_surfaces, input_mrc, mask_tolerance_distance, labels):
 if __name__=="__main__":
     print("test")
     # convert_from_CLI()
-    mrcfiles = glob.glob("*_labels.mrc")
-    # mrcfiles = ["UF6_labels.mrc"]
+    # mrcfiles = glob.glob("*_labels.mrc")
+    mrcfiles = ["TT9_labels.mrc"]
     structures = ["OMM", "IMM", "ER"]
     # structures=["IMM"]
     print(mrcfiles)
