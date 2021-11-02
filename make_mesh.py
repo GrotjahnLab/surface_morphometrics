@@ -11,7 +11,7 @@ pointweight = 2 # 0 for max smoothness, 1 to 4 for beter fit to points
 num_faces = 150000
 # percent = .5 # percent of points to use
 k_neighbors = 50 # number of neighbors for point cloud normal estimation
-deldist = 2 # max distance to delete
+deldist = 1.5 # max distance to delete
 ms = pm.MeshSet()
 
 for point_cloud in pts_files:
