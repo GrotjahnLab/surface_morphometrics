@@ -1,6 +1,7 @@
 # Surface Morphometrics Toolkit
 ### Quantification of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
-Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*
+Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*. 
+
 Developed in close collaboration with Michaela Medina
 
 A collection of tools to generate robust open mesh surfaces from voxel segmentations of biological membranes
