@@ -1,4 +1,5 @@
 # Surface Morphometrics Toolkit
+![Workflow Figure](https://raw.githubusercontent.com/GrotjahnLab/surface_morphometrics/master/docs/images/Workflow_title.png)
 ### Quantification of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
 Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*. 
 
@@ -23,9 +24,9 @@ using pycurv's vector voting framework, and tools to convert these morphological
 
 
 ## Organization
-Scripts are still in a rough state tailored to mitochondrial workflow. They will be generalized in the coming weeks.
+Mesh generation scripts have been generalized but surface morphology quantifications are still specific to mitochondrial and ER membranes, and will be generalized after biorxiv release.
 1. Robust Mesh Generation
-    1. `mrc2pts.py` to prepare point clouds
+    1. `mrc2xyz.py` to prepare point clouds from voxel segmentation
     2. `make_mesh.py` to perform screened poisson reconstruction and associated processes
     3. `mask_and_convert_ply.py` to convert ply files to vtp files ready for pycurv
 2. Surface Morphology Extraction
