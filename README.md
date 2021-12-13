@@ -1,5 +1,5 @@
 # Surface Morphometrics Toolkit
-![Workflow Figure](https://raw.githubusercontent.com/GrotjahnLab/surface_morphometrics/master/docs/images/Workflow_title.png)
+![Workflow Figure](https://raw.githubusercontent.com/GrotjahnLab/surface_morphometrics/master/Workflow_title.png)
 ### Quantification of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
 Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*. 
 
