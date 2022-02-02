@@ -42,7 +42,7 @@ Mesh generation scripts have been generalized but surface morphology quantificat
 The development of this toolkit and examples of useful applications can be found in the following manuscript. Please cite it if you use this software in your research, or extend it to make improvements!
 
 > **A surface morphometrics toolkit to quantify organellar membrane ultrastructure using cryo-electron tomography.**  
-> Benjamin A. Barad, Michaela Medina, Daniel Fuentes, R. Luke Wiseman, Danielle A. Grotjahn  
+> Benjamin A. Barad<sup>†</sup>, Michaela Medina<sup>†</sup>, Daniel Fuentes, R. Luke Wiseman, Danielle A. Grotjahn  
 > *bioRxiv* 2022.01.23.477440; doi: https://doi.org/10.1101/2022.01.23.477440
 
 All scientific software is dependent on other libraries, but the surface morphometrics toolkit is particularly dependent on [PyCurv](https://github.com/kalemaria/pycurv), which provides the vector voted curvature measurements and the triangle graph framework. As such, please also cite the pycurv manuscript:
