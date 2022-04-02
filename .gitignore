@@ -138,3 +138,5 @@ dmypy.json
 # Array jobs
 *.out
 *.err
+distances_job.sh
+slurm_job.sh
