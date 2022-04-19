@@ -1,0 +1,32 @@
+segmentation_values: # The value used to represent each feature, and the name of the feature.
+  - 1: OMM
+  - 2: IMM
+  - 3: ER
+surface_generation:
+  simplify: True # You should not turn this off. Non-simplified surfaces can be VERY slow and there is no real benefit.
+  max_triangles: 150000 # if more than this number of triangles are generated, the surface is decimated to this number
+  extrapolation_voxels: 1 # More extrapolation will fill in larger holes, but can cause issues due to curling on the edges. Also, sometimes the holes are real and interesting.
+  point_weight: 0.7 # Smaller numbers have stronger weight towards fitting segmented points, larger numbers have stronger weight towards generating a smooth surface
+  neighbor_count: 70 # Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
+curvature_measurements:
+  radius_hit: 12 # This corresponds to the radius of the smallest feature of interest, roughly, for neighborhood determination. 8-15 seems to be a good range for mitochondria
+distance_measurements:
+  mindist: 3
+  maxdist: 400
+  tolerance: 0.1
+  intra: # Intra-surface distance measurements
+    - IMM
+    - OMM
+    - ER
+  inter: # Intersurface distance measurements. Writes out symmetrically so no extra bits are needed.
+    - OMM:
+      - IMM
+      - ER
+orientation_measurements:
+  - OMM
+  - IMM
+  - ER
+
+
+
+

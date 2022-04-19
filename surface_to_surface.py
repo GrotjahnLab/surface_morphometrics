@@ -34,7 +34,7 @@ def save_ply(poly, fname):
     writer.SetInputData(poly)
     writer.Write()
 
-def get_dist_two_directions(point, normal, locator, xyz, dist_min=3, dist_max=400, tolerance=0.1, ):
+def get_dist_two_directions(point, normal, locator, dist_min=3, dist_max=400, tolerance=0.1, ):
     """Returns the distance and cell ID from a certain point along both the 
     positive and normal axis
 
@@ -45,7 +45,6 @@ def get_dist_two_directions(point, normal, locator, xyz, dist_min=3, dist_max=40
     dist_max: maximum distance to consider
     tolerance: tolerance for the distance calculation
     """
-    positions = []
     distances = []
     cell_ids = []
     for direction in [-normal, normal]:
@@ -116,7 +115,7 @@ def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=200, t
     # Calculate distances
     print("Calculating distances")
     for i in range(len(close_distances.a)):
-        close_distances.a[i], close_id.a[i], far_distances.a[i], far_id.a[i] = get_dist_two_directions(xyz[i], normal[i], locator, xyz, dist_min, dist_max, tolerance=0.001)
+        close_distances.a[i], close_id.a[i], far_distances.a[i], far_id.a[i] = get_dist_two_directions(xyz[i], normal[i], locator, dist_min, dist_max, tolerance=0.001)
     # Write out distances
     print(np.nanmin(close_distances.a), np.nanmax(close_distances.a))
     print("Writing out distances")

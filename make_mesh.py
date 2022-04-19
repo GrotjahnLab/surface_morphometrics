@@ -10,7 +10,7 @@ import pymeshlab as pm
 
 def reconstruct_surface(xyzfile, plyfile, pointweight=0.7, num_faces=150000, k_neighbors=70, deldist=4):
 
-def xyz_to_ply(xyzfile, plyfile, pointweight=0.7, num_faces=150000, k_neighbors=70, deldist=4):
+def xyz_to_ply(xyzfile, plyfile, pointweight=0.7, num_faces=150000, k_neighbors=70, deldist=4, smooth_iter=1):
     """Convert an xyz file to a ply file using pymeshlab
 
     Arguments:
@@ -20,11 +20,12 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.7, num_faces=150000, k_neighbors=
     num_faces {int} -- Maximal number of allowed faces after decimation. Default 150000, use more for finer sampling but with greater computational cost.
     k_neighbors {int} -- Number of neighbors for point cloud normal estimation - default 70
     deldist {int} -- Max distance to extrapolate. Default 4; distances are in the point cloud distance unit (default nm).
+    smooth_iter {int} -- Number of smoothing iterations. Default 1.
     """
     print(f"Processing {xyzfile}")
     ms = pm.MeshSet()
     ms.load_new_mesh(point_cloud)
-    ms.compute_normals_for_point_sets(k=k_neighbors, smoothiter=1) # Predict smooth normals
+    ms.compute_normals_for_point_sets(k=k_neighbors, smoothiter=smooth_iter) # Predict smooth normals
     ms.surface_reconstruction_screened_poisson(depth=10, pointweight=pointweight, iters=10, scale=1.2) # Screened Poisson
     ms.distance_from_reference_mesh(measuremesh = 1, refmesh=0 , maxdist=pm.Percentage(20), signeddist=False) # Delete points that are too far from the reference mesh
     ms.conditional_vertex_selection(condselect = f'(q>{deldist})') # Select only the best quality vertices
