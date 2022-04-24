@@ -8,7 +8,7 @@ __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
 import time
-
+import sys
 import click
 
 from curvature_calculation import new_workflow, extract_curvatures_after_new_workflow
@@ -52,7 +52,21 @@ def run_pycurv(filename, folder, scale=1, radius_hit=10, min_component=30, exclu
     t_end = time.time()
     duration = t_end - t_begin
     minutes, seconds = divmod(duration, 60)
+    if not folder.endswith("/"):
+        folder += "/"
+    output_vtp = folder+basename+f'.AVV_rh{radius_hit}.vtp'
+    output_csv = folder+basename+f'.AVV_rh{radius_hit}.csv'
+    output_gt = folder+basename+f'.AVV_rh{radius_hit}.gt'
+    output_log = folder+basename+f'.VV_rh{radius_hit}.log'
+
     print('\nTotal pycurv time: {} min {} s'.format(minutes, seconds))
+    sys.stdout = sys.__stdout__
+    print("Final outputs written:")
+    print("VTP file for paraview: "+output_vtp)
+    print("CSV file for pandas based quantification: "+output_csv)
+    print("GT file for further morphometrics quantification: "+output_gt)
+    print("Log for troubleshooting: "+output_log)
+    
     return
 
 if __name__=="__main__":

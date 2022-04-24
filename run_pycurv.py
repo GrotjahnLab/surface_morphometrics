@@ -69,6 +69,7 @@ for surface in mesh_files:
                         exclude_borders=config["curvature_measurements"]["exclude_borders"],
                         cores=config["cores"])
 
+    
 print("-------------------------------------------------------")
 print("Pycurv complete. It is highly recommended to check the AVV vtp file with paraview to confirm good results.")
 print("If you are happy with the results, you can move on to `distances_and_orientations.py`.")
