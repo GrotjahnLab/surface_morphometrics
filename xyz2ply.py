@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 """Generate a cropped mesh from a point cloud using pymeshlab and the screened poisson method.
 
 Usage: xyz2ply.py cloud.xyz mesh.ply"""

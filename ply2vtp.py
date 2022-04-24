@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 """Generate a VTK style vtp file from a ply file
 
 usage: ply2vtp.py mesh.ply mesh.vtp"""

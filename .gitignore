@@ -7,6 +7,7 @@
 *.gt
 *.csv
 *.log
+morphometrics/
 
 output/
 # Byte-compiled / optimized / DLL files

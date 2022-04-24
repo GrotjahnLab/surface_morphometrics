@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 """Step one of the pipeline for surface morphometrics
 Convert a semantic segmentation MRC file to a series of membrane meshes for each segment.
 Takes a label MRC file and outputs a point cloud xyz file, a mesh ply file, and a mesh vtp file.
