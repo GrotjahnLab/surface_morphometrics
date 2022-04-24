@@ -19,7 +19,7 @@ using pycurv's vector voting framework, and tools to convert these morphological
 
 ## Running the pipeline
 
-## Individual Step Scripts Organization
+## Custom running of individual steps
 Mesh generation scripts have been generalized but surface morphology quantifications are still specific to mitochondrial and ER membranes, and will be generalized after biorxiv release.
 1. Robust Mesh Generation
     1. `mrc2xyz.py` to prepare point clouds from voxel segmentation
