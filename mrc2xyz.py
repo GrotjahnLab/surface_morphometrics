@@ -1,3 +1,11 @@
+"""Generate a scaled point cloud xyz file from a labelled mrc map
+
+usage: mrc2xyz input.mrc output.xyz -l label_int"""
+
+__author__ = "Benjamin Barad"
+__email__ = "benjamin.barad@gmail.com"
+__license__ = "GPLv3"
+
 import click
 import glob
 import mrcfile
@@ -10,7 +18,11 @@ import pandas
 @click.argument('output', type=str)
 @click.option('-l', '--label', type=int, default=1, help="Label for feature of interest")
 @click.option('-a','--angstrom', type=bool, default=False, help="Scale output in angstroms (default nm)")
-def convert(input, output, label, angstrom):
+def click_convert(input, output, label, angstrom):
+	"""Wrapper function to convert a mrc file to an xyz file with click"""
+	mrc_to_xyz(input, output, label, angstrom)
+
+def mrc_to_xyz(input, output, label, angstrom):
 	"""Extract a segmented feature of interest from a mrc file and output as an xyz-formatted point cloud
 	
 	Arguments:
@@ -29,9 +41,14 @@ def convert(input, output, label, angstrom):
 	print(voxel_size, origin)
 	 
 	data = np.where(mrc.data == label)
+	if len(data[0]) == 0:
+		print("No data found for label {}".format(label))
+		return 1
 	df = pandas.DataFrame(data={'x': data[2], 'y': data[1], 'z': data[0]})
 	df = df * voxel_size + origin
 	df.to_csv(output, sep=" ", index=False, header=False)
+	return 0
+
 
 
 def convert_mitochondria(input_filename):
@@ -58,9 +75,4 @@ def convert_mitochondria(input_filename):
 		df.to_csv(output, sep=" ", index=False, header=False)
 
 if __name__=="__main__":
-	# data = glob.glob("*_labels.mrc")
-	# # data = ["TT9_labels.mrc"]
-	# for datum in data:
-	# 	print(datum)
-	# 	convert_mitochondria(datum)
-	convert()
+	click_convert()

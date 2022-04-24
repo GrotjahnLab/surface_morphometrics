@@ -1,0 +1,38 @@
+data_dir: "./example_data/"
+work_dir: "./morphometrics/"
+segmentation_values: # The value used to represent each feature, and the name of the feature.
+  OMM: 1
+  IMM: 2
+  ER: 3
+surface_generation:
+  angstroms: false # Default scaling adjusts so surfaces are nm-scaled, if set to true surfaces are not rescaled and remain angstrom-scaled.
+  simplify: True # You should not turn this off. Non-simplified surfaces can be VERY slow and there is no real benefit.
+  max_triangles: 150000 # if more than this number of triangles are generated, the surface is decimated to this number
+  extrapolation_distance: 1.5 # Distance in nm (or angstroms, if angstrom setting is True) to extrapolate the surface
+  octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
+  point_weight: 0.7 # Smaller numbers have stronger weight towards fitting segmented points, larger numbers have stronger weight towards generating a smooth surface
+  neighbor_count: 70 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
+  smoothing_iterations: 1 # Number of smoothing iterations to perform for estimating normals. You should usually leave this at 1.
+curvature_measurements:
+  radius_hit: 12 # This corresponds to the radius of the smallest feature of interest, roughly, for neighborhood determination. 8-15 seems to be a good range for mitochondria
+distance_measurements:
+  mindist: 3
+  maxdist: 400
+  tolerance: 0.1
+  intra: # Intra-surface distance measurements
+    - IMM
+    - OMM
+    - ER
+  inter: # Intersurface distance measurements. Writes out symmetrically so you do not need to give symmetric options.
+    OMM:
+      - IMM
+      - ER
+planar_orientation_measurements: # Orientation relative to growth plane
+  - IMM
+inter_orientation_metrics: # Orientation relative to other surface
+  IMM:
+    - OMM
+
+
+
+

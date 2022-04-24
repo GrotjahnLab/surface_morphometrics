@@ -6,8 +6,3 @@ dependencies:
   - conda-forge::graph-tool
   - pathlib
   - pip>=20.0.2
-  - pip:
-    - git+https://github.com/bbarad/Pyto.git
-    - git+https://github.com/kalemaria/pycurv.git
-    - pymeshlab
-    - pyyaml

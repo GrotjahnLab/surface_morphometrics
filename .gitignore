@@ -3,6 +3,10 @@
 *.pkl
 .DS_Store
 *.txt
+*.xyz
+*.gt
+*.csv
+*.log
 
 output/
 # Byte-compiled / optimized / DLL files

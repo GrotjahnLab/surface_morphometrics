@@ -1,29 +1,25 @@
-# Surface Morphometrics Toolkit
+# Surface Morphometrics Pipeline
 ![Workflow Figure](https://raw.githubusercontent.com/GrotjahnLab/surface_morphometrics/master/Workflow_title.png)
 ### Quantification of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
 Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*. 
 
 Developed in close collaboration with Michaela Medina
 
-A collection of tools to generate robust open mesh surfaces from voxel segmentations of biological membranes
+A pipeline of tools to generate robust open mesh surfaces from voxel segmentations of biological membranes
 using the Screened Poisson algorithm, calculate morphological features including curvature and membrane-membrane distance
 using pycurv's vector voting framework, and tools to convert these morphological quantities into morphometric insights.
 
 
-## Dependencies
-1. Numpy
-2. Scipy
-3. Pandas
-4. mrcfile
-5. Click
-6. Matplotlib
-7. Pymeshlab
-8. Pycurv   
-    1. Pyto
-    2. Graph-tool
+## Installation:
+1. Clone this git repository: `git clone https://github.com/grotjahnlab/surface_morphometrics.git`
+2. Install the conda environment: `conda env create -f environment.yml`
+3. Activate the conda environment: `source activate morphometrics`
+4. Install additional dependencies: `pip install -r pip_requirements.txt`
 
 
-## Organization
+## Running the pipeline
+
+## Individual Step Scripts Organization
 Mesh generation scripts have been generalized but surface morphology quantifications are still specific to mitochondrial and ER membranes, and will be generalized after biorxiv release.
 1. Robust Mesh Generation
     1. `mrc2xyz.py` to prepare point clouds from voxel segmentation
@@ -37,7 +33,17 @@ Mesh generation scripts have been generalized but surface morphology quantificat
     1. `csv_quantifications.py` to generate graphs and statistics with pandas.
     2. Paraview for structured mapping.
 
-
+## Dependencies
+1. Numpy
+2. Scipy
+3. Pandas
+4. mrcfile
+5. Click
+6. Matplotlib
+7. Pymeshlab
+8. Pycurv   
+    1. Pyto
+    2. Graph-tool
 ## Citation
 The development of this toolkit and examples of useful applications can be found in the following manuscript. Please cite it if you use this software in your research, or extend it to make improvements!
 
