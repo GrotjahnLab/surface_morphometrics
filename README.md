@@ -18,6 +18,7 @@ using pycurv's vector voting framework, and tools to convert these morphological
 
 
 ## Running the configurable pipeline
+Optional first step to use our tutorial data: `cd example_data && tar -xzvf examples.tar.gz`
 1. Edit the `config.yml` file for your specific project needs.
 2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
 3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python pycurv_analysis.py config.yml ${i}.surface.vtp`
