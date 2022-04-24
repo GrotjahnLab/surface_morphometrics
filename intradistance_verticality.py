@@ -106,7 +106,6 @@ def surface_verticality(graph_file, exportcsv=False):
     tg = TriangleGraph()
     tg.graph = load_graph(graph_file)
     z_values = tg.graph.vp.n_v.get_2d_array([2])[0]
-    print(z_values)
     # Normals are unit scaled by pycurv, so the angle between is the arccos with (0,0,1) - or just the z value!
     # Report in degrees - CryoEM tends to use degrees.
     vert = 90-np.abs(np.arccos(z_values)*180/np.pi-90) 
@@ -158,6 +157,8 @@ def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=400, t
     tg.graph.vp.self_id_far = far_id
     # Save graph
     tg.graph.save(graph_file)
+    surf = tg.graph_to_triangle_poly()
+    io.save_vtp(surf, surface_file)
     # Save CSV with all features
     if exportcsv:
         csvname = graph_file[:-3]+".csv"
