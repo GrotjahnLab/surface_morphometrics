@@ -18,9 +18,9 @@ curvature_measurements:
   min_component: 30 # The minimum number of triangles for a component to be considered for curvature measurement.
   exclude_borders: 0 # Values greater than zero exclude the border from the curvature calculation by n nm/angstroms.
 distance_and_orientation_measurements:
-  mindist: 3
-  maxdist: 400
-  tolerance: 0.1
+  mindist: 3 # Minimum distance between two points for them to be considered for distance measurement.
+  maxdist: 400 # Maximum distance between two points for them to be considered for distance measurement.
+  tolerance: 0.1 # Tolerance for determining if a triangle is contacted by a line.
   verticality: true # Measure verticality (angle relative to growth plane). 
   intra: # Intra-surface distance/orientation (verticality) measurements
     - IMM
