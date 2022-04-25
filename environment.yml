@@ -1,15 +1,8 @@
 name: morphometrics
-channels:
-  - defaults
 dependencies:
   - python=3.9.0
-  - pkgw-forge::gtk3
-  - conda-forge::pygobject=3.38.0
   - conda-forge::matplotlib=3.3.3
+  - conda-forge::pandas
   - conda-forge::graph-tool
-  - pip>=20.3.3
-  - pip:
-    - pandas
-    - git+https://github.com/vladanl/Pyto.git --no-dependencies
-    - git+git://github.com/kalemaria/pycurv.git
-    - pymeshlab
+  - pathlib
+  - pip>=20.0.2

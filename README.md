@@ -1,14 +1,47 @@
-# Surface Morphometrics Toolkit
+# Surface Morphometrics Pipeline
 ![Workflow Figure](https://raw.githubusercontent.com/GrotjahnLab/surface_morphometrics/master/Workflow_title.png)
 ### Quantification of Membrane Surfaces Segmented from Cryo-ET or other volumetric imaging.  
 Author: __Benjamin Barad__/*<benjamin.barad@gmail.com>*. 
 
 Developed in close collaboration with Michaela Medina
 
-A collection of tools to generate robust open mesh surfaces from voxel segmentations of biological membranes
+A pipeline of tools to generate robust open mesh surfaces from voxel segmentations of biological membranes
 using the Screened Poisson algorithm, calculate morphological features including curvature and membrane-membrane distance
 using pycurv's vector voting framework, and tools to convert these morphological quantities into morphometric insights.
 
+
+## Installation:
+1. Clone this git repository: `git clone https://github.com/grotjahnlab/surface_morphometrics.git`
+2. Install the conda environment: `conda env create -f environment.yml`
+3. Activate the conda environment: `source activate morphometrics`
+4. Install additional dependencies: `pip install -r pip_requirements.txt`
+
+
+## Running the configurable pipeline
+Optional first step to use our tutorial data: `cd example_data && tar -xzvf examples.tar.gz`. 
+Runningh the full pipeline on a 4 core laptop with the tutorial datasets takes about 5 hours, mostly in steps 2 and 3. With cluster parallelization, the full pipeline can run in 1 hour.
+1. Edit the `config.yml` file for your specific project needs.
+2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
+3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python pycurv_analysis.py config.yml ${i}.surface.vtp`
+4. Measure intra- and inter-surface distances and orientations (also best to run this one in parallel for each original segmentation): `python measure_distances_orientations.py config.yml ${i}.mrc`
+5. Combine the results of the pycurv analysis into aggregate Experiments and generate statistics and plots. This requires some manual coding using the Experiment class and its associated methods in the `morphometrics_stats.py`. `mitochondria_statistics.py` is an example of how to do this.
+
+
+## Running individual steps without pipelining
+Individual steps are available as click commands in the terminal, and as functions
+
+1. Robust Mesh Generation
+    1. `mrc2xyz.py` to prepare point clouds from voxel segmentation
+    2. `xyz2ply.py` to perform screened poisson reconstruction and mask the surface
+    3. `ply2vtp.py` to convert ply files to vtp files ready for pycurv
+2. Surface Morphology Extraction
+    1. `curvature.py` to run pycurv in an organized way on pregenerated surfaces
+    2. `intradistance_verticality.py` to generate distance metrics and verticality measurements within a surface.
+    3. `interdistance_orientation.py` to generate distance metrics and orientation measurements between surfaces.
+    4. Outputs: gt graphs for further analysis, vtp files for paraview visualization, and CSV files for         pandas-based plotting and statistics
+3. Morphometric Quantification - there is no click function for this, as the questions answered depend on the biological system of interest!
+    1. `morphometrics_stats.py` to generate graphs and statistics with pandas.
+    2. [Paraview](https://www.paraview.org/) for 3D surface mapping of quantifications.
 
 ## Dependencies
 1. Numpy
@@ -21,23 +54,6 @@ using pycurv's vector voting framework, and tools to convert these morphological
 8. Pycurv   
     1. Pyto
     2. Graph-tool
-
-
-## Organization
-Mesh generation scripts have been generalized but surface morphology quantifications are still specific to mitochondrial and ER membranes, and will be generalized after biorxiv release.
-1. Robust Mesh Generation
-    1. `mrc2xyz.py` to prepare point clouds from voxel segmentation
-    2. `make_mesh.py` to perform screened poisson reconstruction and associated processes
-    3. `mask_and_convert_ply.py` to convert ply files to vtp files ready for pycurv
-2. Surface Morphology Extraction
-    1. `curvature_calculation_args.py` to run pycurv in an organized way on pregenerated surfaces
-    2. `surface_to_surface.py` to generate distance metrics between and within membranes on pycurv-processed graphs 
-    3. Outputs: gt graphs for further analysis, vtp files for paraview visualization, and CSV files for pandas-based plotting and statistics
-3. Morphometric Quantification
-    1. `csv_quantifications.py` to generate graphs and statistics with pandas.
-    2. Paraview for structured mapping.
-
-
 ## Citation
 The development of this toolkit and examples of useful applications can be found in the following manuscript. Please cite it if you use this software in your research, or extend it to make improvements!
 

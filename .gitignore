@@ -3,6 +3,13 @@
 *.pkl
 .DS_Store
 *.txt
+*.xyz
+*.gt
+*.csv
+*.log
+*.mrc
+*.bak
+morphometrics/
 
 output/
 # Byte-compiled / optimized / DLL files
@@ -138,3 +145,5 @@ dmypy.json
 # Array jobs
 *.out
 *.err
+distances_job.sh
+slurm_job.sh

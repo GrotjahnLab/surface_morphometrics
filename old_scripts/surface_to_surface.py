@@ -34,7 +34,7 @@ def save_ply(poly, fname):
     writer.SetInputData(poly)
     writer.Write()
 
-def get_dist_two_directions(point, normal, locator, xyz, dist_min=3, dist_max=400, tolerance=0.1, ):
+def get_dist_two_directions(point, normal, locator, dist_min=3, dist_max=400, tolerance=0.1, ):
     """Returns the distance and cell ID from a certain point along both the 
     positive and normal axis
 
@@ -45,7 +45,6 @@ def get_dist_two_directions(point, normal, locator, xyz, dist_min=3, dist_max=40
     dist_max: maximum distance to consider
     tolerance: tolerance for the distance calculation
     """
-    positions = []
     distances = []
     cell_ids = []
     for direction in [-normal, normal]:
@@ -116,7 +115,7 @@ def surface_self_distances(graph_file, surface_file, dist_min=6, dist_max=200, t
     # Calculate distances
     print("Calculating distances")
     for i in range(len(close_distances.a)):
-        close_distances.a[i], close_id.a[i], far_distances.a[i], far_id.a[i] = get_dist_two_directions(xyz[i], normal[i], locator, xyz, dist_min, dist_max, tolerance=0.001)
+        close_distances.a[i], close_id.a[i], far_distances.a[i], far_id.a[i] = get_dist_two_directions(xyz[i], normal[i], locator, dist_min, dist_max, tolerance=0.001)
     # Write out distances
     print(np.nanmin(close_distances.a), np.nanmax(close_distances.a))
     print("Writing out distances")
@@ -154,33 +153,17 @@ def surface_to_surface_distance(graph1, surface1, surface1_name, graph2, surface
     print("Calculating Distances")
     vprop1 = tg1.graph.new_vertex_property("double")
     vprop2 = tg2.graph.new_vertex_property("double")
-    datasize = len(xyz2)*len(xyz1)*64 # approximate size of a distnace matrix
-    print(f"Estimated memory usage for cdist matrix: {datasize/1e9} GB")
 
-    ## If the size of the matrix is small, use a cdist matrix.
-    if datasize<128e9: # 128GB of memory
-        print(f"Using cdist matrix")
-        dist_matrix = cdist(xyz1, xyz2) # Efficient calculation of distances.
-        vprop1.a = dist_matrix.min(axis=1)
-        tg1.graph.vp[surface2_name+"_dist"] = vprop1
+    print("Using KDTree")
+    tree1 = cKDTree(xyz2)
+    mindist1, min_index_1 = tree1.query(xyz1)
+    vprop1.a = mindist1
+    tg1.graph.vp[surface2_name+"_dist"] = vprop1
 
-        vprop2.a = dist_matrix.min(axis=0)
-        tg2.graph.vp[surface1_name+"_dist"] = vprop2
-        if save_neighbor_index: # Argmin gets the first occurence of the minimum
-            min_index_1 = np.argmin(dist_matrix, axis=1)
-            min_index_2 = np.argmin(dist_matrix, axis=0)
-    ## Otherwise, make your calculations using a cKDTree
-    else:
-        print("Using KDTree")
-        tree1 = cKDTree(xyz2)
-        mindist1, min_index_1 = tree1.query(xyz1)
-        vprop1.a = mindist1
-        tg1.graph.vp[surface2_name+"_dist"] = vprop1
-
-        tree2 = cKDTree(xyz1)
-        mindist2, min_index_2 = tree2.query(xyz2)
-        vprop2.a = mindist2
-        tg2.graph.vp[surface1_name+"_dist"] = vprop2
+    tree2 = cKDTree(xyz1)
+    mindist2, min_index_2 = tree2.query(xyz2)
+    vprop2.a = mindist2
+    tg2.graph.vp[surface1_name+"_dist"] = vprop2
     
     if save_neighbor_index: # Argmin gets the first occurence of the minimum
         neighbor1=tg1.graph.new_vertex_property("int")
