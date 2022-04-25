@@ -1,0 +1,6 @@
+git+https://github.com/bbarad/Pyto.git
+git+https://github.com/kalemaria/pycurv.git
+pymeshlab
+pyyaml
+click
+mrcfile
