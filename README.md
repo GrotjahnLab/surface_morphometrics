@@ -18,11 +18,12 @@ using pycurv's vector voting framework, and tools to convert these morphological
 
 
 ## Running the configurable pipeline
-Optional first step to use our tutorial data: `cd example_data && tar -xzvf examples.tar.gz`
+Optional first step to use our tutorial data: `cd example_data && tar -xzvf examples.tar.gz`. 
+Runningh the full pipeline on a 4 core laptop with the tutorial datasets takes about 5 hours, mostly in steps 2 and 3. With cluster parallelization, the full pipeline can run in 1 hour.
 1. Edit the `config.yml` file for your specific project needs.
 2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
 3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python pycurv_analysis.py config.yml ${i}.surface.vtp`
-4. Measure intra- and inter-surface distances and orientations (also best to run this one in parallel for each original segmentation): `python measure_distances.py config.yml ${i}.mrc`
+4. Measure intra- and inter-surface distances and orientations (also best to run this one in parallel for each original segmentation): `python measure_distances_orientations.py config.yml ${i}.mrc`
 5. Combine the results of the pycurv analysis into aggregate Experiments and generate statistics and plots. This requires some manual coding using the Experiment class and its associated methods in the `morphometrics_stats.py`. `mitochondria_statistics.py` is an example of how to do this.
 
 

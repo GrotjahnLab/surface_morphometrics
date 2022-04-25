@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 """Step two of the pipeline for surface morphometrics
 Take a VTP style mesh generatead through the screen and perform curvature analysis using AVV.
 

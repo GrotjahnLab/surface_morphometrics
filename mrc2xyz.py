@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 """Generate a scaled point cloud xyz file from a labelled mrc map
 
 usage: mrc2xyz input.mrc output.xyz -l label_int"""
