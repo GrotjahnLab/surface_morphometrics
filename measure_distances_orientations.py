@@ -43,7 +43,8 @@ with open(argv[1]) as file:
     if not config["work_dir"]:
         print("work_dir not specified in config.yml - data_dir will be used for output")
         config["work_dir"] = config["data_dir"]
-
+    elif not config["work_dir"].endswith("/"):
+        config["work_dir"] += "/"
 # See if a specific file was specified
 if len(argv) == 2:
     print("No input file specified - will run on meshes for all segmentation files in the data directory")
