@@ -13,7 +13,7 @@ using pycurv's vector voting framework, and tools to convert these morphological
 ## Installation:
 1. Clone this git repository: `git clone https://github.com/grotjahnlab/surface_morphometrics.git`
 2. Install the conda environment: `conda env create -f environment.yml`
-3. Activate the conda environment: `source activate morphometrics`
+3. Activate the conda environment: `conda activate morphometrics`
 4. Install additional dependencies: `pip install -r pip_requirements.txt`
 
 
