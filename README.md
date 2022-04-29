@@ -19,9 +19,9 @@ using pycurv's vector voting framework, and tools to convert these morphological
 
 ## Running the configurable pipeline
 Optional first step to use our tutorial data: `cd example_data && tar -xzvf examples.tar.gz`. 
-Running the full pipeline on a 4 core laptop with the tutorial datasets takes about 8 hours (3 for TE1, 5 for 
-TF1), mostly in steps 2 and 3. With cluster parallelization, the full pipeline can run in 2 hours for as many
-tomograms as desired.
+Running the full pipeline on a 4 core laptop with the tutorial datasets takes about 8 hours (3 
+for TE1, 5 for TF1), mostly in steps 3 and 4. With cluster parallelization, the full pipeline 
+can run in 2 hours for as many tomograms as desired.
 1. Edit the `config.yml` file for your specific project needs.
 2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
 3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python pycurv_analysis.py config.yml ${i}.surface.vtp`
