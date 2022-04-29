@@ -2,7 +2,6 @@
 *.svg
 *.pkl
 .DS_Store
-*.txt
 *.xyz
 *.gt
 *.csv
