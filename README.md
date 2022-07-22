@@ -24,7 +24,8 @@ for TE1, 5 for TF1), mostly in steps 3 and 4. With cluster parallelization, the 
 can run in 2 hours for as many tomograms as desired.
 1. Edit the `config.yml` file for your specific project needs.
 2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
-3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python pycurv_analysis.py config.yml ${i}.surface.vtp`
+3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python 
+run_pycurv.py config.yml ${i}.surface.vtp`
 4. Measure intra- and inter-surface distances and orientations (also best to run this one in parallel for each original segmentation): `python measure_distances_orientations.py config.yml ${i}.mrc`
 5. Combine the results of the pycurv analysis into aggregate Experiments and generate statistics and plots. This requires some manual coding using the Experiment class and its associated methods in the `morphometrics_stats.py`. Everything is roughly organized around working with the CSVs in pandas dataframes. Running  `morphometrics_stats.py` as a script with the config file and a filename will output a pickle file with an assembled "experiment" object for all the tomos in the data folder. Reusing a pickle file will make your life way easier if you have dozens of tomograms to work with, but it doesn't save too much time with just the example data...
 
