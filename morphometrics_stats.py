@@ -180,6 +180,38 @@ def weighted_histogram_peak(values, weights, bins, bin_range):
     bin_vals = (bin_edges[i], bin_edges[i+1])
     return(np.mean(bin_vals))
 
+def ks_statistics(datasets, areas, ns, condition_names, morph_names, basename, filename, rad=12):
+    """Compute the two-sided KS test for a pair of sets of mitochondria, with a variety of different assumptions about the size of the independent variables.
+    
+    Args:
+        datasets (list): list of datasets to compare
+        areas (list): total area for each dataset
+        ns (list): number of mitochondria for each dataset
+        condition_names (list): condition names for each dataset
+        morph_names (list): morphology names for each dataset
+        basename (str): type of distribution to test
+        filename (str): name of the file to save the results to
+        rad (int): radius of the smallest feature for estimation of independent features. Default to 8 based on intracrista spacing at bend sites.
+        """
+    area_adjuster = np.pi*rad**2
+    with open(filename, "w") as f:
+        f.write(f"Base Experiment,Stat Type,Sample A Condition,Sample A Morph,Sample B Condition,Sample B Morph,KS_stat,pbase,pmito,prad\n")
+        for i, set_a in enumerate(datasets):
+            for j, set_b in enumerate(datasets):
+                if j<=i: 
+                    continue
+                ind_n_1 = areas[i]/area_adjuster
+                ind_n_2 = areas[j]/area_adjuster
+                ind_en = round(np.mean([ind_n_1, ind_n_2]))
+                en = round(np.mean([ns[i], ns[j]]))
+                ks, p = stats.ks_2samp(set_a, set_b)
+                # print(ks,p)
+                p_en = stats.distributions.kstwo.sf(ks, en)
+                # print(en, p_en)
+                p_rad = stats.distributions.kstwo.sf(ks, ind_en)
+                # print(ind_en, p_rad)
+                f.write(f"{basename},KS,{condition_names[i]},{morph_names[i]},{condition_names[j]},{morph_names[j]},{ks},{p},{p_en},{p_rad}\n")
+                
 
 def statistics(datasets, basename,  condition_names, morph_names, test_type="median", filename="test.csv", figsize=(5,4), ylabel="Peak Value"):
     """Generate mann-whitney U test and violin plots for a set of datasets.
@@ -207,10 +239,11 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
                 try:
                     u,p_u = stats.mannwhitneyu(set_a, set_b)
                     t,p_t = stats.ttest_ind(set_a, set_b, equal_var=False)
+                    
                 except e:
                     print(e)
                     u,p_u,t,p_t = -1,-1,-1,-1
-                print(p_u, p_t)
+                # print(p_u, p_t)
                 file.write(f"{basename},{test_type},{condition_names[i]},{morph_names[i]},{np.mean(set_a)},{condition_names[j]},{morph_names[j]},{np.mean(set_b)},{u},{p_u},{t},{p_t}\n")
     figure_filename = filename[:-3]+"svg"
     fig,ax=plt.subplots(figsize=figsize)
@@ -224,7 +257,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     fig.savefig(figure_filename[:-3]+"png")
 
 
-def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(5,3.6), logx=False, vlines = True):
+def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(5,3.6), logx=False, vlines = True, legend=True, color_offset=0):
     """Construct an area-weighted histogram of the data.
     Args:
         data (array-like): list of arrays to be independently plotted.
@@ -238,6 +271,8 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         figsize (tuple): figure size.
         logx (bool): whether to use a logarithmic x-axis.
         vlines (bool): whether to plot vertical lines at the histogram peaks.
+        legend (bool): whether to show a legend. Default True.
+        color_offset (int): offset for the color of the histogram. Default 0. Used for some weird side cases
         """
     assert len(data)==len(areas)
     assert len(data)==len(labels)
@@ -250,7 +285,7 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         if vlines: 
             delta = (binset[1]-binset[0])/2
             idx = n.argmax()
-            print(idx)
+            # print(idx)
             ax.axvline(binset[idx]+delta, linestyle="--", color=colors[index])
     ax.set_xlim(range)
     ax.set_xlabel(xlabel)
@@ -259,7 +294,8 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
     ax.spines['top'].set_visible(False)
     ax.yaxis.set_ticks_position('left')
     ax.xaxis.set_ticks_position('bottom')
-    ax.legend()
+    if legend:
+        ax.legend()
     # plt.tight_layout()
     fig.savefig(filename, bbox_inches='tight')
     fig.savefig(filename[:-3]+"notitle.png", bbox_inches='tight', dpi=300)
@@ -310,7 +346,7 @@ def barchart(bars, errors, labels, title, ylabel, filename="barchart.svg", figsi
         ymax (float): maximum value of the y-axis.
         hline (float): Optional value of the horizontal line.
         """
-    print(len(bars))
+    # print(len(bars))
     x = np.arange(len(bars))
     fig, ax = plt.subplots(figsize=figsize)
     barwidth=0.8
@@ -358,6 +394,22 @@ def double_barchart(bars1, bars2, errors1, errors2, labels, title, ylabel, legen
     fig.savefig(filename, bbox_inches='tight')
     fig.savefig(filename[:-3]+"png", bbox_inches='tight')
 
+def bootstrap_stats(data, n=1000):
+    """Calculate the bootstrap statistics of a given data set.
+
+    Args:
+        data (list): list of values.
+        n (int): number of bootstrap samples.
+
+    Returns:
+        list: list of bootstrap samples.
+        list: list of bootstrap confidence intervals.
+    """
+    bootstraps = np.zeros(n)
+    for i in range(n):
+        bootstraps[i] = np.mean(np.random.choice(data, len(data)))
+    return bootstraps, np.percentile(bootstraps, [2.5, 97.5])
+
 @click.command()
 @click.argument('configfile', type=click.Path(exists=True), required=True)
 @click.argument('experimentname', required=True)
@@ -388,7 +440,7 @@ def assemble_experiment_pickle(configfile, experimentname):
         experiment.add_tomograms(input_names, labels, config["work_dir"], extension) 
         with open(output_file, "wb") as f:
             pickle.dump(experiment, f)
-        print(output_file)
+        print(output_file) 
 
 
 

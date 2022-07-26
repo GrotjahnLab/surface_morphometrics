@@ -31,7 +31,8 @@ def convert(input_surfaces, input_mrc, mask_tolerance_distance, labels):
         minimum = (0,0,0)
         # print(maximum)
         # print(minimum)
-        voxel_size = mrc.voxel_size.x/10 # nm
+        # voxel_size = mrc.voxel_size.x/10 # nm
+        voxel_size=1
         # maximum = [int(i) for i in maximum]
         print(maximum)
         # Since I am keeping everything to voxel spacing until the scale step in pycurv, I will just reduce mask_tolerance_distance according to voxel size

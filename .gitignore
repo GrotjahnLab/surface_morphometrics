@@ -9,7 +9,9 @@
 *.mrc
 *.bak
 morphometrics/
-
+workdir/
+datadir/
+output_split/
 output/
 # Byte-compiled / optimized / DLL files
 __pycache__/
