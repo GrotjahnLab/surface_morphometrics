@@ -16,16 +16,38 @@ using pycurv's vector voting framework, and tools to convert these morphological
 3. Activate the conda environment: `conda activate morphometrics`
 4. Install additional dependencies: `pip install -r pip_requirements.txt`
 
+## Example data
+
+There is tutorial data available in the `example_data` folder. Uncompress the tar file with:
+```bash
+cd example_data
+tar -xzvf examples.tar.gz
+```
+
+There are two example datasets: `TE1.mrc` and `TF1.mrc`.
+These files were exported from Amira which means the file header is non-standard, so we can ignore the warning that the file may be corrupt.
+To open them with `mrcfile`  you will need the `permissive=True` keyword argument, like so:
+
+```python
+import mrcfile
+
+with mrcfile.open('TE1.mrc', permissive=True) as mrc:
+    print(mrc.data.shape)  # TE1.mrc has shape (312, 928, 960)
+```
 
 ## Running the configurable pipeline
-Optional first step to use our tutorial data: `cd example_data && tar -xzvf examples.tar.gz`. 
+
 Running the full pipeline on a 4 core laptop with the tutorial datasets takes about 8 hours (3 
 for TE1, 5 for TF1), mostly in steps 3 and 4. With cluster parallelization, the full pipeline 
 can run in 2 hours for as many tomograms as desired.
+
 1. Edit the `config.yml` file for your specific project needs.
 2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
-3. Run pycurv for each surface (recommended to run individually in parallel with a cluster):`python 
+3. Run pycurv for each surface (recommended to run individually in parallel with a cluster): `python 
 run_pycurv.py config.yml ${i}.surface.vtp`
+
+    You may see warnings aobut the curvature, this is normal and you do not need to worry.
+
 4. Measure intra- and inter-surface distances and orientations (also best to run this one in parallel for each original segmentation): `python measure_distances_orientations.py config.yml ${i}.mrc`
 5. Combine the results of the pycurv analysis into aggregate Experiments and generate statistics and plots. This requires some manual coding using the Experiment class and its associated methods in the `morphometrics_stats.py`. Everything is roughly organized around working with the CSVs in pandas dataframes. Running  `morphometrics_stats.py` as a script with the config file and a filename will output a pickle file with an assembled "experiment" object for all the tomos in the data folder. Reusing a pickle file will make your life way easier if you have dozens of tomograms to work with, but it doesn't save too much time with just the example data...
 
