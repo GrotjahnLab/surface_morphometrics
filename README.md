@@ -25,8 +25,7 @@ tar -xzvf examples.tar.gz
 ```
 
 There are two example datasets: `TE1.mrc` and `TF1.mrc`.
-These files were exported from Amira which means the file header is non-standard, so we can ignore the warning that the file may be corrupt.
-To open them with `mrcfile`  you will need the `permissive=True` keyword argument, like so:
+You can open them with `mrcfile`, like so:
 
 ```python
 import mrcfile
@@ -34,6 +33,8 @@ import mrcfile
 with mrcfile.open('TE1.mrc', permissive=True) as mrc:
     print(mrc.data.shape)  # TE1.mrc has shape (312, 928, 960)
 ```
+
+In some cases the file header may be non-standard (for example, mrc files exported from Amira software). In these cases, the `permissive=True` keyword argument is required, and you can ignore the warning that the file may be corrupt. All the surface morphometrics toolkit scripts will still run correctly.
 
 ## Running the configurable pipeline
 
