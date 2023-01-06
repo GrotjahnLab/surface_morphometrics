@@ -9,15 +9,16 @@ __license__ = "GPLv3"
 import os
 import pickle
 import numpy as np
+import time
 
-from morphometrics_stats import Experiment, Tomogram, weighted_median, weighted_histogram_peak, statistics, histogram, twod_histogram, barchart, double_barchart
+from morphometrics_stats import Experiment, Tomogram, weighted_median, weighted_histogram_peak, statistics, histogram, twod_histogram, barchart, double_barchart, ks_statistics, bootstrap
 
 
 junction_minimum = 19 # nm 
 junction_maximum = 40 # nm
 
 startdir = os.getcwd()
-output_dir = os.getcwd()+"/output/"
+output_dir = os.getcwd()+"/output_final/"
 print("Unpickling Treated")
 with open('treated.pkl', 'rb') as file:
     treated = pickle.load(file)
@@ -34,14 +35,18 @@ os.chdir(output_dir)
 
 # OMM-IMM Distance
 labels = ["Veh", "Tg"]
-#Long
+# #Long
 title = "OMM-IMM distance (elongated)"
 distances = []
 areas = []
+all_areas = [] # sum of triangles
+areas_all = [] # actual per-triangle areas
+ns = []
 distance_peak_sets = []
 conditions = ["Vehicle", "Tg", "Vehicle", "Tg"]
 morphologies = ["elongated", "elongated", "fragmented", "fragmented"]
 for file in untreated, treated:
+    count = 0
     distance_set = []
     area_set = []
     peak_set = []
@@ -50,74 +55,109 @@ for file in untreated, treated:
         if key in ["UF3", "TE1"]:
             continue
         if not key[1] == "F":
+            count += 1
             peak_set.append(weighted_histogram_peak(val["OMM"]["IMM_dist"], val["OMM"]["area"], 100, [5,25]))
             distance_set.extend(val["OMM"]["IMM_dist"])
             area_set.extend(val["OMM"]["area"])
+            histogram([val["OMM"]["IMM_dist"]], [val["OMM"]["area"]], [key], f"IMM-OMM Dist ({key})", "Distance (nm)", filename="permito/IMM-OMM_dist_"+key+".svg", bins=100, range=[5,25], legend=False)
     distance_peak_sets.append(peak_set)
     distances.append(distance_set)
     areas.append(list(np.array(area_set)/sum(area_set)))
+    all_areas.append(sum(area_set))
+    areas_all.append(area_set)
+    ns.append(count)
 histogram(distances, areas, labels, title, xlabel="OMM-IMM Distance (nm)", filename="immdist_comparison_long.svg", bins=100, range=[5,25])
 #Short
 title = "OMM-IMM distance (fragmented)"
+distances_all = distances
 distances = []
 areas = []
 for file in untreated, treated:
     distance_set = []
     area_set = []
     peak_set = []
+    count = 0
     for key,val in file.tomograms.items():
         # Skip Non-fragmented tomos!
-        if key in ["UF3", "TE1"]:
-            continue
         if key[1] == "F":
+            count+=1
             peak_set.append(weighted_histogram_peak(val["OMM"]["IMM_dist"], val["OMM"]["area"], 100, [5,25]))
             distance_set.extend(val["OMM"]["IMM_dist"])
             area_set.extend(val["OMM"]["area"])
+            histogram([val["OMM"]["IMM_dist"]], [val["OMM"]["area"]], [key], f"IMM-OMM Dist ({key})", "Distance (nm)", filename="permito/IMM-OMM_dist_"+key+".svg", bins=100, range=[5,25], legend=False)
     distance_peak_sets.append(peak_set)
     distances.append(distance_set)
+    distances_all.append(distance_set)
     areas.append(list(np.array(area_set)/sum(area_set)))
+    areas_all.append(area_set)
+    all_areas.append(sum(area_set))
+    ns.append(count)
 histogram(distances, areas, labels, title, xlabel="OMM-IMM Distance (nm)", filename="immdist_comparison_short.svg", bins=100, range=[5,25])
 statistics(distance_peak_sets, "OMM-IMM Distance", conditions, morphologies, test_type="Peaks", filename="imm_omm_distance_violin.csv", ylabel="Distance (nm)")
-#OMM-ER Distance
+ks_statistics(distances_all, all_areas, ns, conditions, morphologies, f"IMM-OMM Distance", filename="imm_omm_distance_ks.csv")
+# bootstrap(distances_all, areas_all, conditions, morphologies, reps=1000, basename = f"IMM-OMM Distance", filename="imm_omm_distance_bootstrap.csv", bins=400, binrange=[5,25])
 
+#OMM-ER Distance
 # Long
 title = "OMM-ER distance (elongated)"
 distances = []
 areas = []
+all_areas = []
+areas_all = []
+ns = []
+distance_peak_sets = []
 for file in untreated, treated:
     distance_set = []
     area_set = []
+    peak_set = []
+    count = 0
     for key,val in file.tomograms.items():
-        # Skip Non-fragmented tomos!
-        if key in ["UF3", "TE1"]:
-            continue
+        # Skip Fragmented tomos!
         if not key[1] == "F":
             if "ER_dist" in val["OMM"].columns.values:
+                count+=1
+                peak_set.append(weighted_histogram_peak(val["OMM"]["ER_dist"], val["OMM"]["area"], 100, [5,40]))
                 distance_set.extend(val["OMM"]["ER_dist"])
                 area_set.extend(val["OMM"]["area"])
-
+                histogram([val["OMM"]["ER_dist"]], [val["OMM"]["area"]], [key], f"OMM-ER Dist ({key})", "Distance (nm)", filename="permito/OMM-ER_dist_"+key+".svg", bins=100, range=[5,40], legend=False)
+    distance_peak_sets.append(peak_set)
     distances.append(distance_set)
     areas.append(list(np.array(area_set)/sum(area_set)))
+    areas_all.append(area_set)
+    all_areas.append(sum(area_set))
+    ns.append(count)
 histogram(distances, areas, labels, title, xlabel="OMM-ER Distance (nm)", filename="omm_er_comparison_long.svg", bins=100, range=[5,40])
 # Short
 title = "OMM-ER distance (fragmented)"
+distances_all = distances
 distances = []
 areas = []
 for file in untreated, treated:
     distance_set = []
     area_set = []
+    peak_set = []
+    count = 0
     for key,val in file.tomograms.items():
         # Skip Non-fragmented tomos!
-        if key in ["UF3", "TE1"]:
-            continue
         if key[1] == "F":
             if "ER_dist" in val["OMM"].columns.values:
+                count+=1
+                peak_set.append(weighted_histogram_peak(val["OMM"]["ER_dist"], val["OMM"]["area"], 100, [5,40]))
                 distance_set.extend(val["OMM"]["ER_dist"])
                 area_set.extend(val["OMM"]["area"])
-
+                histogram([val["OMM"]["ER_dist"]], [val["OMM"]["area"]], [key], f"OMM-ER Dist ({key})", "Distance (nm)", filename="permito/OMM-ER_dist_"+key+".svg", bins=100, range=[5,40], legend=False)
+    distance_peak_sets.append(peak_set)
     distances.append(distance_set)
     areas.append(list(np.array(area_set)/sum(area_set)))
+    all_areas.append(sum(area_set))
+    areas_all.append(area_set)
+    ns.append(count)
+distances_all.extend(distances)
 histogram(distances, areas, labels, title, xlabel="OMM-ER Distance (nm)", filename="omm_er_comparison_short.svg", bins=100, range=[5,40])
+statistics(distance_peak_sets, "OMM-ER Distance", conditions, morphologies, test_type="Peaks", filename="omm_er_distance_violin.csv", ylabel="Distance (nm)")
+ks_statistics(distances_all, all_areas, ns, conditions, morphologies, f"OMM_ER Distance", filename="omm_er_distance_ks.csv")
+# bootstrap(distances_all, areas_all, conditions, morphologies, reps=1000, basename = f"OMM-ER Distance", filename="omm_er_distance_bootstrap.csv", bins=400, binrange=(5,40))
+
 # OMM/ER vs OMM/IMM 
 for file, label in ((untreated, "Vehicle"), (treated, "Tg"), (tggsk, "Tg+GSK")):
     # Short
@@ -170,9 +210,9 @@ for file, label, areas in ((untreated, "Vehicle", untreated_areas), (treated, "T
     title = f"Surface area per tomogram - {label}"
     labels = names
     bars = [np.mean(areas[i])/1000000 for i in names]
-    print(bars)
+    # print(bars)
     errors = [np.std(areas[i])/1000000 for i in names]
-    print(errors)
+    # print(errors)
     barchart(bars, errors, labels, title, ylabel="Area (um^2)", filename=filename)
 filename = "absolute_areas_comparison.svg"
 title = "Surface area per tomogram"
@@ -204,9 +244,9 @@ for file, label, areas in ((untreated, "Vehicle", untreated_areas), (treated, "T
     title = f"Surface area per tomogram in fragmented cells - {label}"
     labels = names
     bars = [np.mean(areas[i])/1000000 for i in names]
-    print(bars)
+    # print(bars)
     errors = [np.std(areas[i])/1000000 for i in names]
-    print(errors)
+    # print(errors)
     barchart(bars, errors, labels, title, ylabel="Area (um^2)", filename=filename)
 filename = "absolute_areas_comparison_short.svg"
 title = "Surface area per tomogram in fragmented cells"
@@ -238,9 +278,9 @@ for file, label, areas in ((untreated, "Vehicle", untreated_areas), (treated, "T
     title = f"Surface area per tomogram in elongated cells- {label}"
     labels = names
     bars = [np.mean(areas[i])/1000000 for i in names]
-    print(bars)
+    # print(bars)
     errors = [np.std(areas[i])/1000000 for i in names]
-    print(errors)
+    # print(errors)
     barchart(bars, errors, labels, title, ylabel="Area (um^2)", filename=filename)
 filename = "absolute_areas_comparison_long.svg"
 title = "Surface area per tomogram in elongated cells"
@@ -323,6 +363,7 @@ for file, label, contact_areas, contact_fractions in ((untreated, "Vehicle", unt
             contact_areas["OMM"].append(omm_area)
             omm_fraction = sum(omm[omm["ER_dist"] < 30].area)/omm_area
             contact_fractions["OMM"].append(omm_fraction)
+
             er_area = sum(er.area)
             contact_areas["ER"].append(er_area)
             er_fraction = sum(er[er["OMM_dist"] < 30].area)/er_area
@@ -379,6 +420,10 @@ for feature in ['IMM', 'IBM', 'crista', 'junction']:
     curve_peaks = []
     conditions = []
     morphologies = []
+    ns = []
+    curves = []
+    all_areas = []
+    areas_all = []
     for run in ['elongated', 'fragmented']:
         curvature_list = []
         log_curvature_list = []
@@ -415,72 +460,79 @@ for feature in ['IMM', 'IBM', 'crista', 'junction']:
                     imm = imm[imm["OMM_dist"]>junction_minimum]
                 curvatures.extend(imm["curvedness_VV"])
                 peaks.append(weighted_histogram_peak(imm["curvedness_VV"], imm["area"], 100, [0,0.1]))
-                # distances.extend(imm["OMM_dist"])
+                histogram([imm["curvedness_VV"]], [imm["area"]], [key], title=f"{feature} Curvature ({key})", xlabel="Curvature (1/nm)", bins=50, range=[5e-4,2e-1], filename=f"permito/{feature}_curvature_{key}_xlog.svg", logx=True, legend=False)                # distances.extend(imm["OMM_dist"])
                 areas.extend(imm["area"])
+            
             # filename = f"curvedness_{label}_long.svg"
             # twod_histogram(distances, curvatures, areas, "IMM-OMM Distance (nm)", "Curvedness (1/nm)", title="Curvedness vs Distance in the IMM", filename = filename, bins=(50,100), range=[[0,50],[0,0.1]], figsize=(4,4), log=True)
             curve_peaks.append(peaks)
             areas = np.array(areas)
             area_list.append(areas/sum(areas))
             counts.append(count)
+            ns.append(count)
+            all_areas.append(sum(areas))
+            areas_all.append(areas)
+            curves.append(curvatures)
             curvature_list.append(curvatures)
             log_curvature_list.append(np.log(np.array(curvatures)))
         histogram(curvature_list, area_list, labels, title=f"{feature[0].title()+feature[1:]} curvedness ({run})", xlabel="Curvedness (1/nm)", bins=50, range=[5e-4,2e-1], filename=f"{feature}_curvedness_xlog_{run}.svg",logx=True)
         histogram(curvature_list, area_list, labels, title=f"{feature[0].title()+feature[1:]} curvedness ({run})", xlabel="Curvedness (1/nm)", bins=50, range=[0,0.1], filename=f"{feature}_curvedness_{run}.svg",logx=False)
-        statistics(curve_peaks, basename, conditions,morphologies, test_type="Peaks", filename=filename, ylabel="Curvedness (1/nm)" )
+    statistics(curve_peaks, basename, conditions,morphologies, test_type="Peaks", filename=filename, ylabel="Curvedness (1/nm)" )
+    ks_statistics(curves, all_areas, ns, conditions,morphologies, f"{feature} curvedness", filename=f"{feature}_curvedness_ks.csv")
+    # bootstrap(curves, areas_all, conditions,morphologies, reps=1000, basename=f"{feature} curvedness", filename=f"{feature}_curvedness_bootstrap.csv", bins=400, binrange=[0,0.1])
         # av0, std0 = weighted_avg_and_std(log_curvature_list[0], area_list[0])
         # av1,std1 = weighted_avg_and_std(log_curvature_list[1], area_list[1])
         # print(counts)
         # print(stats.ttest_ind_from_stats(av0, std0, counts[0], av1, std1, counts[1]))
         # print(stats.ks_2samp(curvature_list[0], curvature_list[1]))
 
-# Relative` surface area
-labels = ["Veh", "Tg"]
-for run in ['elongated', 'fragmented', 'all']:
-    area_set = []
-    std_set = []
-    for file, label in ((untreated, "Vehicle"), (treated, "Tg")): 
-        areas = []
-        for key, val in file.tomograms.items():
-            if key in ["UF3", "TE1"]:
-                continue
-            if run == 'elongated':
-                if key[1] == "F":
-                    continue
-            elif run == 'fragmented':
-                if not key[1] == 'F':
-                    continue
-            print(key)
-            omm_area = sum(val["OMM"]["area"])
+# # Relative` surface area
+# labels = ["Veh", "Tg"]
+# for run in ['elongated', 'fragmented', 'all']:
+#     area_set = []
+#     std_set = []
+#     for file, label in ((untreated, "Vehicle"), (treated, "Tg")): 
+#         areas = []
+#         for key, val in file.tomograms.items():
+#             if key in ["UF3", "TE1"]:
+#                 continue
+#             if run == 'elongated':
+#                 if key[1] == "F":
+#                     continue
+#             elif run == 'fragmented':
+#                 if not key[1] == 'F':
+#                     continue
+#             print(key)
+#             omm_area = sum(val["OMM"]["area"])
 
-            imm = val["IMM"]
-            imm_area = sum(imm['area'])/omm_area
-            ibm = imm[imm["OMM_dist"]<junction_minimum]
-            ibm_area = sum(ibm['area'])/omm_area
-            cristae = imm[imm["OMM_dist"] > junction_maximum]
-            cristae_area = sum(cristae['area'])/omm_area
-            junctions = imm[imm["OMM_dist"] < junction_maximum]
-            junctions = junctions[junctions["OMM_dist"]>junction_minimum]
-            junctions_area = sum(junctions['area'])/omm_area
+#             imm = val["IMM"]
+#             imm_area = sum(imm['area'])/omm_area
+#             ibm = imm[imm["OMM_dist"]<junction_minimum]
+#             ibm_area = sum(ibm['area'])/omm_area
+#             cristae = imm[imm["OMM_dist"] > junction_maximum]
+#             cristae_area = sum(cristae['area'])/omm_area
+#             junctions = imm[imm["OMM_dist"] < junction_maximum]
+#             junctions = junctions[junctions["OMM_dist"]>junction_minimum]
+#             junctions_area = sum(junctions['area'])/omm_area
 
-            areas.append((ibm_area, junctions_area, cristae_area, imm_area))
+#             areas.append((ibm_area, junctions_area, cristae_area, imm_area))
         
-        areas = np.array(areas)
-        mean = np.mean(areas, axis=0)
-        std = np.std(areas, axis=0)
-        area_set.append(mean)
-        std_set.append(std)
-        barchart(mean, std, labels=["IBM", "Junctions", "Cristae", "All"], title=f'Relative Surface Areas of {label} in {run} cells', ylabel="Surface Area Relative to OMM", filename=f"{label}_relative_areas_{run}.svg", figsize=(4,3))
-    average = [area_set[1][i]/area_set[0][i] for i in range(4)]
-    std = [np.sqrt((std_set[0][i]/area_set[0][i])**2+(std_set[1][i]/area_set[1][i])**2) for i in range(4)]
-    barchart(average, std, labels=["IBM", "Junctions", "Cristae", "All"], title = f"Treated Surface Area Relative to Untreated in {run} cells", ylabel="Relative Surface Area", filename=f"ratio_relative_areas_{run}.svg", figsize=(4,3), ymax = 2.5, hline = 1)
-    # average = [area_set[2][i]/area_set[0][i] for i in range(4)]
-    # std = [np.sqrt((std_set[0][i]/area_set[0][i])**2+(std_set[2][i]/area_set[2][i])**2) for i in range(4)]
-    # barchart(average, std, labels=["IBM", "Junctions", "Cristae", "All"], title = f"Cotreatment Surface Area Relative to Untreated in {run} cells", ylabel="Relative Surface Area", filename=f"ratio_relative_areas_cotreatment_{run}.svg", figsize=(4,3), ymax = 2.5, hline = 1)
+#         areas = np.array(areas)
+#         mean = np.mean(areas, axis=0)
+#         std = np.std(areas, axis=0)
+#         area_set.append(mean)
+#         std_set.append(std)
+#         barchart(mean, std, labels=["IBM", "Junctions", "Cristae", "All"], title=f'Relative Surface Areas of {label} in {run} cells', ylabel="Surface Area Relative to OMM", filename=f"{label}_relative_areas_{run}.svg", figsize=(4,3))
+#     average = [area_set[1][i]/area_set[0][i] for i in range(4)]
+#     std = [np.sqrt((std_set[0][i]/area_set[0][i])**2+(std_set[1][i]/area_set[1][i])**2) for i in range(4)]
+#     barchart(average, std, labels=["IBM", "Junctions", "Cristae", "All"], title = f"Treated Surface Area Relative to Untreated in {run} cells", ylabel="Relative Surface Area", filename=f"ratio_relative_areas_{run}.svg", figsize=(4,3), ymax = 2.5, hline = 1)
+#     # average = [area_set[2][i]/area_set[0][i] for i in range(4)]
+#     # std = [np.sqrt((std_set[0][i]/area_set[0][i])**2+(std_set[2][i]/area_set[2][i])**2) for i in range(4)]
+#     # barchart(average, std, labels=["IBM", "Junctions", "Cristae", "All"], title = f"Cotreatment Surface Area Relative to Untreated in {run} cells", ylabel="Relative Surface Area", filename=f"ratio_relative_areas_cotreatment_{run}.svg", figsize=(4,3), ymax = 2.5, hline = 1)
 
     
     
-    double_barchart(area_set[0], area_set[1], std_set[0], std_set[1], labels=["IBM", "Junctions", "Cristae", "All"], title="Relative Surface Area", ylabel="Surface Area Relative to OMM", legends = labels, filename=f"double_barchart_relative_areas_{run}.svg", figsize=(4,3))
+#     double_barchart(area_set[0], area_set[1], std_set[0], std_set[1], labels=["IBM", "Junctions", "Cristae", "All"], title="Relative Surface Area", ylabel="Surface Area Relative to OMM", legends = labels, filename=f"double_barchart_relative_areas_{run}.svg", figsize=(4,3))
 
 # Intra-IMM Spacing
 #  2D
@@ -495,6 +547,11 @@ for feature in ["crista", "junction", "IBM", "IMM"]:
     far_peaks = []
     conditions = []
     morphs = []
+    close = []
+    far = []
+    ns = []
+    all_areas = []
+    areas_all = []
     for run in ['elongated', 'fragmented']: #, 'all'
         close_list = []
         far_list = []
@@ -507,6 +564,7 @@ for feature in ["crista", "junction", "IBM", "IMM"]:
             distances_long = []
             peak_list_close = []
             peak_list_far = []
+            count=0
             for key, val in file.tomograms.items():
                 if key in ["UF3", "TE1"]:
                     continue
@@ -517,6 +575,7 @@ for feature in ["crista", "junction", "IBM", "IMM"]:
                     if not key[1] == 'F':
                         continue
                 imm = val["IMM"]
+                count +=1
                 # imm = imm[imm["OMM_dist"]>23]
                 if feature == 'IBM':
                     imm = imm[imm["OMM_dist"]<junction_minimum]
@@ -527,22 +586,41 @@ for feature in ["crista", "junction", "IBM", "IMM"]:
                     imm = imm[imm["OMM_dist"]>junction_minimum]
                 imm = imm[imm["self_id_min"] != -1]
                 peak_list_close.append(weighted_histogram_peak(imm["self_dist_min"], imm["area"], 100, [10,40]))
+                histogram([imm["self_dist_min"]], [imm["area"]],[key],f"Intra{feature} spacing ({key})", f"Distance (nm)", filename=f"permito/intra{feature}_{key}.svg", figsize=(4,3), legend=False)
                 peak_list_far.append(weighted_histogram_peak(imm["self_dist_far"], imm["area"], 100, [20,200]))
+                try:
+                    histogram([imm["self_dist_far"]], [imm["area"]],[key],f"Inter{feature} spacing ({key})", f"Distance (nm)", filename=f"permito/inter{feature}_{key}.svg", figsize=(4,3), legend=False)
+                except:
+                    print(f"No self dist far for {key}")
+                    pass
                 distances_long.extend(imm["self_dist_far"])
                 distances_short.extend(imm["self_dist_min"])
                 areas.extend(imm["area"])
             close_peaks.append(peak_list_close)
             far_peaks.append(peak_list_far)
             close_list.append(distances_short)
+            close.append(distances_short)
             far_list.append(distances_long)
+            far.append(distances_long)
             areas = np.array(areas)
             area_list.append(areas/sum(areas))
+            all_areas.append(sum(areas))
+            areas_all.append(areas)
+            ns.append(count)
         
         histogram(close_list, area_list, labels, title=f"Intra-{feature} spacing ({run})", xlabel="Distance (nm)", bins=50, range=[10,40], filename=f"{feature}_close_intra_{run}.svg", vlines=True)
         histogram(far_list, area_list, labels, title=f"Inter-{feature} spacing ({run})", xlabel="Distance (nm)", bins=50, range=[20,100], filename=f"{feature}_far_intra_{run}.svg", vlines=True)
     statistics(close_peaks, basename_close, conditions, morphs, test_type="Peaks", ylabel="Distance (nm)", filename=filename_close)
+    ks_statistics(close, all_areas, ns, conditions, morphs, basename=f"Intra{feature} spacing", filename=f"intra{feature}_spacing_ks.csv")
+    # bootstrap(close, areas_all, conditions, morphs, reps=1000, basename=f"Intra{feature} spacing", filename=f"intra{feature}_spacing_bootstrap.csv", bins=400, binrange=[10,40])
     statistics(far_peaks, basename_far, conditions, morphs, test_type="Peaks", ylabel="Distance (nm)", filename=filename_far)
+    ks_statistics(far, all_areas, ns, conditions, morphs, basename=f"Inter{feature} spacing", filename=f"inter{feature}_spacing_ks.csv")
+    # bootstrap(far, areas_all, conditions, morphs, reps=1000, basename=f"Inter{feature} spacing", filename=f"inter{feature}_spacing_bootstrap.csv", bins=400, binrange=[20,100])
 
+# OMM Curvedness
+areas_all = []
+curves = []
+ns = []
 for run in ['elongated', 'fragmented', 'all']:
     curvature_list = []
     log_curvature_list = []
@@ -587,6 +665,10 @@ for feature in ['IMM', 'IBM', 'cristae', 'junctions']:
     vert_medians = []
     vert_means = []
     vert_stds = []
+    verts = []
+    ns = []
+    all_areas = []
+    areas_all = []
     conditions = []
     morphs = []
     # filename_means = f"{feature}_verticality_means_violin.csv"
@@ -633,6 +715,9 @@ for feature in ['IMM', 'IBM', 'cristae', 'junctions']:
                 vert = 90-np.abs(np.arccos(z)*180/np.pi-90)
                 angles.extend(vert)
                 areas.extend(imm["area"])
+                histogram([vert], [imm["area"]],[key],f"{feature} verticality ({key})", f"Angle (º)", filename=f"permito/{feature}_verticality_{key}.svg", figsize=(4,3), legend=False)
+
+                all_areas.append(sum(imm["area"]))
                 # medians.append(weighted_median(vert, imm["area"]))
                 # means.append(np.average(vert, weights=imm["area"]))
                 stds.append(np.std(vert))
@@ -640,38 +725,194 @@ for feature in ['IMM', 'IBM', 'cristae', 'junctions']:
             # twod_histogram(distances, curvatures, areas, "IMM-OMM Distance (nm)", "Curvedness (1/nm)", title="Curvedness vs Distance in the IMM", filename = filename, bins=(50,100), range=[[0,50],[0,0.1]], figsize=(4,4), log=True)
             areas = np.array(areas)
             area_list.append(areas/sum(areas))
+            areas_all.append(areas)
             counts.append(count)
+            ns.append(count)
             angle_list.append(angles)
+            verts.append(angles)
             # vert_means.append(means)
             # vert_medians.append(medians)
             vert_stds.append(stds)
         histogram(angle_list, area_list, labels, title=f"{feature[0].title()+feature[1:]}-growth plane angle ({run})", xlabel="Angle (º)", bins=60, range=[0,90], filename=f"{feature}_verticality_{run}.svg")
     statistics(vert_stds, basename, conditions, morphs, test_type="STD", ylabel="Standard Deviation of Distance (nm)", filename=filename_stds)
+    filename_ks =  f"{feature}_verticality_ks.csv"
+    ks_statistics(verts, all_areas, ns, conditions, morphs, basename="Verticality", filename=filename_ks)
+    # bootstrap(verts, areas_all, conditions, morphs, reps=1000, basename="Verticality", filename=f"{feature}_verticality_bootstrap.csv", bins=360, binrange=[0,90])
     # statistics(vert_means, basename, conditions, morphs, test_type="Means", ylabel="Distance (nm)", filename=filename_means)
     # statistics(vert_medians, basename, conditions, morphs, test_type="Medians", ylabel="Distance (nm)", filename=filename_medians)
     
+#OMM curvature
+# Curvature of OMM
+# Long
+print("OMM curvature")
+for feature in ['OMM']:
+    basename = f"{feature[0].title()+feature[1:]} curvedness"
+    filename = f"curvedness_{feature}_violin.csv"
+    curve_peaks = []
+    conditions = []
+    morphologies = []
+    curves = []
+    ns = []
+    all_areas = []
+    areas_all = []
+    for run in ['elongated', 'fragmented']:
+        curvature_list = []
+        log_curvature_list = []
+        area_list = []
+        labels = ["Veh", "Tg"]
+        counts = []
+        for file, label in ((untreated, "Vehicle"), (treated, "Tg")):
+            peaks = []
+            morphologies.append(run)
+            conditions.append(label)
+            curvatures = []
+            # distances = []
+            areas = []
+            count = 0
+            for key, val in file.tomograms.items():
+                if run == 'elongated':
+                    if key[1] == "F":
+                        continue
+                elif run == 'fragmented':
+                    if not key[1] == 'F':
+                        continue
 
-## Relative angle  
+                count += 1
+                omm = val["OMM"]
+
+                curvatures.extend(omm["curvedness_VV"])
+                histogram([omm["curvedness_VV"]], [omm["area"]], [key], title=f"OMM Curvature ({key})", xlabel="Curvature (1/nm)", bins=50, range=[5e-4,2e-1], filename=f"permito/{feature}_curvature_{key}_xlog.svg", logx=True, legend=False)
+                peaks.append(weighted_histogram_peak(omm["curvedness_VV"], omm["area"], 100, [0,0.1]))
+                # distances.extend(imm["OMM_dist"])
+                areas.extend(omm["area"])
+            # filename = f"curvedness_{label}_long.svg"
+            # twod_histogram(distances, curvatures, areas, "IMM-OMM Distance (nm)", "Curvedness (1/nm)", title="Curvedness vs Distance in the IMM", filename = filename, bins=(50,100), range=[[0,50],[0,0.1]], figsize=(4,4), log=True)
+            curve_peaks.append(peaks)
+            areas = np.array(areas)
+            all_areas.append(sum(areas))
+            areas_all.append(areas)
+            area_list.append(areas/sum(areas))
+            counts.append(count)
+            ns.append(count)
+            curvature_list.append(curvatures)
+            curves.append(curvatures)
+            log_curvature_list.append(np.log(np.array(curvatures)))
+        histogram(curvature_list, area_list, labels, title=f"{feature[0].title()+feature[1:]} curvedness ({run})", xlabel="Curvedness (1/nm)", bins=50, range=[5e-4,2e-1], filename=f"{feature}_curvedness_xlog_{run}.svg",logx=True)
+        histogram(curvature_list, area_list, labels, title=f"{feature[0].title()+feature[1:]} curvedness ({run})", xlabel="Curvedness (1/nm)", bins=50, range=[0,0.1], filename=f"{feature}_curvedness_{run}.svg",logx=False)
+    statistics(curve_peaks, basename, conditions,morphologies, test_type="Peaks", filename=filename, ylabel="Curvedness (1/nm)" )
+    filename_ks =  f"{feature}_curvedness_ks.csv"
+    ks_statistics(verts, all_areas, ns, conditions, morphs, basename="Curvedness", filename=filename_ks)
+    # bootstrap(curves, areas_all, conditions, morphs, reps=1000, basename="OMM Curvedness", filename=f"{feature}_curvedness_bootstrap.csv", bins=400, binrange=[0,0.1])
+        # av0, std0 = weighted_avg_and_std(log_curvature_list[0], area_list[0])
+        # av1,std1 = weighted_avg_and_std(log_curvature_list[1], area_list[1])
+        # print(counts)
+        # print(stats.ttest_ind_from_stats(av0, std0, counts[0], av1, std1, counts[1]))
+        # print(stats.ks_2samp(curvature_list[0], curvature_list[1])) 
+
+# ER curvature
+# Curvature of ER
+# Long
+for feature in ['ER']:
+    basename = f"{feature[0].title()+feature[1:]} curvedness"
+    filename = f"curvedness_{feature}_violin.csv"
+    filename_ks = f"curvedness_{feature}_ks.csv"
+    curve_peaks = []
+    conditions = []
+    morphologies = []
+    curves = []
+    ns = []
+    all_areas = []
+    areas_all = []
+    for run in ['elongated', 'fragmented']:
+        curvature_list = []
+        log_curvature_list = []
+        area_list = []
+        labels = ["Veh", "Tg"]
+        counts = []
+        for file, label in ((untreated, "Vehicle"), (treated, "Tg")):
+            peaks = []
+            morphologies.append(run)
+            conditions.append(label)
+            curvatures = []
+            # distances = []
+            areas = []
+            count = 0
+            for key, val in file.tomograms.items():
+                if not 'ER' in val.dataframe_names:
+                    print(f"Skipping {key} due to no ER")
+                    continue
+                if not key[-1] == "a":
+                    continue
+                if run == 'elongated':
+                    if key[1] == "F":
+                        continue
+                elif run == 'fragmented':
+                    if not key[1] == 'F':
+                        continue
+
+                count += 1
+                er = val["ER"]
+
+                curvatures.extend(er["curvedness_VV"])
+                histogram([er["curvedness_VV"]], [er["area"]], [key], title=f"ER Curvature ({key})", xlabel="Curvature (1/nm)", bins=50, range=[5e-4,2e-1], filename=f"permito/{feature}_curvature_{key}_xlog.svg", logx=True, legend=False)
+                peaks.append(weighted_histogram_peak(er["curvedness_VV"], er["area"], 100, [0,0.1]))
+                # distances.extend(imm["OMM_dist"])
+                areas.extend(er["area"])
+            # filename = f"curvedness_{label}_long.svg"
+            # twod_histogram(distances, curvatures, areas, "IMM-OMM Distance (nm)", "Curvedness (1/nm)", title="Curvedness vs Distance in the IMM", filename = filename, bins=(50,100), range=[[0,50],[0,0.1]], figsize=(4,4), log=True)
+            curve_peaks.append(peaks)
+            areas = np.array(areas)
+            all_areas.append(sum(areas))
+            areas_all.append(areas)
+            area_list.append(areas/sum(areas))
+            counts.append(count)
+            ns.append(count)
+            curvature_list.append(curvatures)
+            curves.append(curvatures)
+            log_curvature_list.append(np.log(np.array(curvatures)))
+        histogram(curvature_list, area_list, labels, title=f"{feature[0].title()+feature[1:]} curvedness ({run})", xlabel="Curvedness (1/nm)", bins=50, range=[5e-4,2e-1], filename=f"{feature}_curvedness_xlog_{run}.svg",logx=True)
+        histogram(curvature_list, area_list, labels, title=f"{feature[0].title()+feature[1:]} curvedness ({run})", xlabel="Curvedness (1/nm)", bins=50, range=[0,0.1], filename=f"{feature}_curvedness_{run}.svg",logx=False)
+    statistics(curve_peaks, basename, conditions,morphologies, test_type="Peaks", filename=filename, ylabel="Curvedness (1/nm)" )
+    ks_statistics(curves, all_areas, ns, conditions, morphologies, basename="ER Curvedness", filename=filename_ks)
+    bootstrap(curves, areas_all, conditions, morphologies, reps=1000, basename="ER Curvedness", filename=f"{feature}_curvedness_bootstrap.csv", bins=400, binrange=[0,0.1])
+        # av0, std0 = weighted_avg_and_std(log_curvature_list[0], area_list[0])
+        # av1,std1 = weighted_avg_and_std(log_curvature_list[1], area_list[1])
+        # print(counts)
+        # print(stats.ttest_ind_from_stats(av0, std0, counts[0], av1, std1, counts[1]))
+        # print(stats.ks_2samp(curvature_list[0], curvature_list[1]))
+
+
+## Rel_angle
 print("Relative Angle")
 for feature in ['IMM', 'IBM', 'cristae', 'junctions']:
-    ang_stds = []
-    morphologies = []
+    vert_medians = []
+    vert_means = []
+    vert_stds = []
+    verts = []
+    ns = []
+    all_areas = []
+    areas_all = []
     conditions = []
-    filename=f"rel_angle_{feature}_violin.csv"
-    basename=f"Angle between {feature} and OMM"
+    morphs = []
+    # filename_means = f"{feature}_verticality_means_violin.csv"
+    # filename_medians = f"{feature}_verticality_medians_violin.csv"
+    filename_stds = f"{feature}_omm_angle_stds_violin.csv"
+    basename = f"{feature}-OMM Angle"
     for run in ['elongated', 'fragmented']:
         angle_list = []
         area_list = []
         labels = ["Veh", "Tg"]
         counts = []
         for file, label in ((untreated, "Vehicle"), (treated, "Tg")):
+            conditions.append(label)
+            morphs.append(run)
             angles = []
             # distances = []
+            # medians = []
+            # means = []
+            stds = []
             areas = []
             count = 0
-            stds = []
-            morphologies.append(run)
-            conditions.append(label)
             for key, val in file.tomograms.items():
                 if key in ["UF3", "TE1"]:
                     continue
@@ -684,7 +925,6 @@ for feature in ['IMM', 'IBM', 'cristae', 'junctions']:
 
                 count += 1
                 imm = val["IMM"]
-
                 omm = val["OMM"]
                 # imm = imm[imm["OMM_dist"]>23]
                 if feature == 'IBM':
@@ -706,13 +946,29 @@ for feature in ['IMM', 'IBM', 'cristae', 'junctions']:
                 ang = [np.arccos(np.abs(np.dot(a_vec[i], b_vec[i])))*180/np.pi for i in range(len(imm))]
                 angles.extend(ang)
                 areas.extend(imm["area"])
+                histogram([ang], [imm["area"]],[key],f"{feature}-OMM Angle ({key})", f"Angle (º)", filename=f"permito/{feature}_omm_angle_{key}.svg", figsize=(4,3), legend=False)
+
+                all_areas.append(sum(imm["area"]))
+                # medians.append(weighted_median(vert, imm["area"]))
+                # means.append(np.average(vert, weights=imm["area"]))
                 stds.append(np.std(ang))
             # filename = f"curvedness_{label}_long.svg"
             # twod_histogram(distances, curvatures, areas, "IMM-OMM Distance (nm)", "Curvedness (1/nm)", title="Curvedness vs Distance in the IMM", filename = filename, bins=(50,100), range=[[0,50],[0,0.1]], figsize=(4,4), log=True)
             areas = np.array(areas)
             area_list.append(areas/sum(areas))
+            areas_all.append(areas)
             counts.append(count)
+            ns.append(count)
             angle_list.append(angles)
-            ang_stds.append(stds)
-        histogram(angle_list, area_list, labels, title=f"{feature[0].title()+feature[1:]}-OMM angle ({run})", xlabel="Angle (º)", bins=90, range=[0,90], filename=f"{feature}_angle_from_OMM_{run}.svg")
-    statistics(ang_stds, basename, conditions, morphs, test_type="STD", ylabel="Standard Deviation of Angle (º)", filename=filename)
+            verts.append(angles)
+            # vert_means.append(means)
+            # vert_medians.append(medians)
+            vert_stds.append(stds)
+        histogram(angle_list, area_list, labels, title=f"{feature[0].title()+feature[1:]}-growth plane angle ({run})", xlabel="Angle (º)", bins=60, range=[0,90], filename=f"{feature}_verticality_{run}.svg")
+    statistics(vert_stds, basename, conditions, morphs, test_type="STD", ylabel="Standard Deviation of Angle (º)", filename=filename_stds)
+    filename_ks =  f"{feature}_omm_angle_ks.csv"
+    ks_statistics(verts, all_areas, ns, conditions, morphs, basename=f"{feature}-OMM Angle", filename=filename_ks)
+    bootstrap(verts, areas_all, conditions, morphs, reps=1000, basename=f"{feature}-OMM Angle", filename=f"{feature}_omm_angle_bootstrap.csv", bins=360, binrange=[0,90])
+    # statistics(vert_means, basename, conditions, morphs, test_type="Means", ylabel="Distance (nm)", filename=filename_means)
+    # statistics(vert_medians, basename, conditions, morphs, test_type="Medians", ylabel="Distance (nm)", filename=filename_medians)
+

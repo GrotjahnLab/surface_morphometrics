@@ -74,6 +74,21 @@ Individual steps are available as click commands in the terminal, and as functio
     1. `morphometrics_stats.py` is a set of classes and functions to generate graphs and statistics with pandas.
     2. [Paraview](https://www.paraview.org/) for 3D surface mapping of quantifications.
 
+## File Descriptions:
+* Files with.xyz extension are point clouds converted, in nm or angstrom scale. This is a flat text file with `X Y Z` coordinates in each line.
+* Files with .ply extension are the surface meshes (in a binary format), which will be scaled in nm or angstrom scale, and work in many different softwares, including [Meshlab](https://www.meshlab.net/). 
+* Files with surface.vtp extension are the same surface meshes in the [VTK](https://vtk.org/) format.
+        * The .surface.vtp files are a less cross-compatible format, so you can't use them with as many types of software, but they are able to store all the fun quantifications you'll do!. [Paraview](https://www.paraview.org/) or [pyvista](https://docs.pyvista.org/) can load this format. This is the format pycurv reads to build graphs.
+* Files with .gt extension are triangle graph files using the `graph-tool` python toolkit. These graphs enable rapid neighbor-wise operations such as tensor voting, but are not especially useful for manual inspection.
+* Files with .csv extension are quantification outputs per-triangle. These are the files you'll use to generate statistics and plots.
+* Files with .log extension are log files, mostly from the output of the pycurv run.
+* Quantifications (plots and statistical tests) are output in csv, svg, and png formats. 
+
+
+## Troubleshooting
+1. Warnings of the type `Gaussian or Mean curvature of X has a large computation error`... can be ignored, as they get cleaned up by pycurv
+2. MRC files that are output by AMIRA don't have proper machine stamps by default. They need to be imported with `mrcfile.open(filename, permissive=True)` 
+
 ## Dependencies
 1. Numpy
 2. Scipy

@@ -14,6 +14,7 @@ import os
 import pickle
 
 import click
+import csv
 import yaml
 import matplotlib
 matplotlib.use("agg")
@@ -180,6 +181,39 @@ def weighted_histogram_peak(values, weights, bins, bin_range):
     bin_vals = (bin_edges[i], bin_edges[i+1])
     return(np.mean(bin_vals))
 
+def ks_statistics(datasets, areas, ns, condition_names, morph_names, basename, filename, rads=[9,12,15]):
+    """Compute the two-sided KS test for a pair of sets of mitochondria, with a variety of different assumptions about the size of the independent variables.
+    
+    Args:
+        datasets (list): list of datasets to compare
+        areas (list): total area for each dataset
+        ns (list): number of mitochondria for each dataset
+        condition_names (list): condition names for each dataset
+        morph_names (list): morphology names for each dataset
+        basename (str): type of distribution to test
+        filename (str): name of the file to save the results to
+        rad (int): radius of the smallest feature for estimation of independent features. Default to 8 based on intracrista spacing at bend sites.
+        """
+    area_adjusters = [np.pi*rad**2 for rad in rads]
+    with open(filename, "w") as f:
+        radnames = ",".join([f"prad({str(r)})" for r in rads])
+        f.write(f"Base Experiment,Stat Type,Sample A Condition,Sample A Morph,Sample B Condition,Sample B Morph,KS_stat,pbase,pmito,{radnames}\n")
+        for i, set_a in enumerate(datasets):
+            for j, set_b in enumerate(datasets):
+                if j<=i: 
+                    continue
+                inds_n_1 = [areas[i]/area_adjuster for area_adjuster in area_adjusters]
+                inds_n_2 = [areas[j]/area_adjuster for area_adjuster in area_adjusters]
+                inds_en = [round(np.mean([inds_n_1[i], inds_n_2[i]])) for i in range(len(rads))]
+                en = round(np.mean([ns[i], ns[j]]))
+                ks, p = stats.ks_2samp(set_a, set_b)
+                # print(ks,p)
+                p_en = stats.distributions.kstwo.sf(ks, en)
+                # print(en, p_en)
+                p_rad = ",".join([str(stats.distributions.kstwo.sf(ks, ind_en)) for ind_en in inds_en])
+                # print(ind_en, p_rad)
+                f.write(f"{basename},KS,{condition_names[i]},{morph_names[i]},{condition_names[j]},{morph_names[j]},{ks},{p},{p_en},{p_rad}\n")
+                
 
 def statistics(datasets, basename,  condition_names, morph_names, test_type="median", filename="test.csv", figsize=(5,4), ylabel="Peak Value"):
     """Generate mann-whitney U test and violin plots for a set of datasets.
@@ -199,19 +233,38 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
         for index, val in enumerate(datasets):
             raw_file.write(f"{condition_names[index]} {morph_names[index]},"+",".join(map(str, val))+"\n")
     with open(filename, 'w') as file:
-        file.write(f"Base Experiment,Stat Type,Sample A Condition,Sample A Morph,Sample A Mean,Sample B Condition,Sample B Morph,Sample B Mean,U,P_U,T,P_T\n")
+        file.write(f"Base Experiment,Stat Type,Utest_Stars,KStest_Stars,Sample A Condition,Sample A Morph,Sample A Mean,Sample B Condition,Sample B Morph,Sample B Mean,U,P_U,T,P_T,KS,P_KS,n_A,n_B\n")
         for i, set_a in enumerate(datasets):
             for j, set_b in enumerate(datasets):
                 if j<=i: 
                     continue
                 try:
+                    stat_stars = " "
                     u,p_u = stats.mannwhitneyu(set_a, set_b)
-                    t,p_t = stats.ttest_ind(set_a, set_b, equal_var=False)
+                    if p_u < 0.001:
+                        stat_stars = "****"
+                    elif p_u < 0.005:
+                        stat_stars = "***"
+                    elif p_u < 0.01:
+                        stat_stars = "**"
+                    elif p_u < 0.05:
+                        stat_stars = "*"
+                    t,p_t = stats.ttest_ind(set_a, set_b, equal_var=False) 
+                    ks, p_ks = stats.ks_2samp(set_a, set_b)
+                    stars_ks = " "
+                    if p_ks < 0.001:
+                        stars_ks = "****"
+                    elif p_ks < 0.005:
+                        stars_ks = "***"
+                    elif p_ks < 0.01:
+                        stars_ks = "**"
+                    elif p_ks < 0.05:
+                        stars_ks = "*"
                 except e:
                     print(e)
                     u,p_u,t,p_t = -1,-1,-1,-1
-                print(p_u, p_t)
-                file.write(f"{basename},{test_type},{condition_names[i]},{morph_names[i]},{np.mean(set_a)},{condition_names[j]},{morph_names[j]},{np.mean(set_b)},{u},{p_u},{t},{p_t}\n")
+                # print(p_u, p_t)
+                file.write(f"{basename},{test_type},{stat_stars},{stars_ks},{condition_names[i]},{morph_names[i]},{np.mean(set_a)},{condition_names[j]},{morph_names[j]},{np.mean(set_b)},{u},{p_u},{t},{p_t},{ks},{p_ks},{len(set_a)},{len(set_b)}\n")
     figure_filename = filename[:-3]+"svg"
     fig,ax=plt.subplots(figsize=figsize)
     ax.set_title(basename)
@@ -224,7 +277,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     fig.savefig(figure_filename[:-3]+"png")
 
 
-def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(5,3.6), logx=False, vlines = True):
+def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(2.26,1.64), logx=False, vlines = True, legend=True, color_offset=0):
     """Construct an area-weighted histogram of the data.
     Args:
         data (array-like): list of arrays to be independently plotted.
@@ -238,6 +291,8 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         figsize (tuple): figure size.
         logx (bool): whether to use a logarithmic x-axis.
         vlines (bool): whether to plot vertical lines at the histogram peaks.
+        legend (bool): whether to show a legend. Default True.
+        color_offset (int): offset for the color of the histogram. Default 0. Used for some weird side cases
         """
     assert len(data)==len(areas)
     assert len(data)==len(labels)
@@ -250,7 +305,7 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         if vlines: 
             delta = (binset[1]-binset[0])/2
             idx = n.argmax()
-            print(idx)
+            # print(idx)
             ax.axvline(binset[idx]+delta, linestyle="--", color=colors[index])
     ax.set_xlim(range)
     ax.set_xlabel(xlabel)
@@ -259,7 +314,8 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
     ax.spines['top'].set_visible(False)
     ax.yaxis.set_ticks_position('left')
     ax.xaxis.set_ticks_position('bottom')
-    ax.legend()
+    if legend:
+        ax.legend()
     # plt.tight_layout()
     fig.savefig(filename, bbox_inches='tight')
     fig.savefig(filename[:-3]+"notitle.png", bbox_inches='tight', dpi=300)
@@ -310,7 +366,7 @@ def barchart(bars, errors, labels, title, ylabel, filename="barchart.svg", figsi
         ymax (float): maximum value of the y-axis.
         hline (float): Optional value of the horizontal line.
         """
-    print(len(bars))
+    # print(len(bars))
     x = np.arange(len(bars))
     fig, ax = plt.subplots(figsize=figsize)
     barwidth=0.8
@@ -358,6 +414,31 @@ def double_barchart(bars1, bars2, errors1, errors2, labels, title, ylabel, legen
     fig.savefig(filename, bbox_inches='tight')
     fig.savefig(filename[:-3]+"png", bbox_inches='tight')
 
+def bootstrap(sets, areas, conditions, morphologies, reps=1000, basename="bootstrap", filename="bootstrap.csv", bins=50, binrange=(0,100)):
+    """Calculate the bootstrap statistics of a set of datasets.
+
+    """
+    bootstrap_sets = []
+    with open(filename, "w") as f:
+        f.write("Experiment,Condition,5%,50%,95%,area,n_triangles\n")
+
+        for index, set in enumerate(sets):
+            set = np.array(set)
+            area = np.array(areas[index])
+            condition = conditions[index]
+            morphology = morphologies[index]
+            bootstraps = np.zeros(reps)
+
+            for i in range(reps):
+                randn = np.random.randint(0, len(set), len(set))
+                randset = set[randn]
+                randarea = area[randn]
+                bootstraps[i] = weighted_histogram_peak(randset, randarea, bins=bins, bin_range=binrange)
+            f.write(f"{basename},{condition} {morphology},{np.percentile(bootstraps, 5)},{np.percentile(bootstraps, 50)},{np.percentile(bootstraps, 95)},{sum(area)},{len(area)}\n")
+
+
+    
+
 @click.command()
 @click.argument('configfile', type=click.Path(exists=True), required=True)
 @click.argument('experimentname', required=True)
@@ -388,7 +469,7 @@ def assemble_experiment_pickle(configfile, experimentname):
         experiment.add_tomograms(input_names, labels, config["work_dir"], extension) 
         with open(output_file, "wb") as f:
             pickle.dump(experiment, f)
-        print(output_file)
+        print(output_file) 
 
 
 

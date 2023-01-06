@@ -74,7 +74,7 @@ for file in segmentation_files:
         if ret_val != 0:
             print("Error converting segmentation file to xyz")
             continue
-        # Generate the membrane mesh ply file fron the xyz file
+        #Generate the membrane mesh ply file from the xyz file
         ply_file =   f"{config['work_dir']}{basename}_{key}.ply" 
         print(f"Generating a ply mesh with Screened Poisson: {ply_file}")
         ret_val = xyz2ply.xyz_to_ply(xyz_file, ply_file, 
