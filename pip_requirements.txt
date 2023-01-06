@@ -1,5 +1,5 @@
-git+https://github.com/bbarad/Pyto.git
-git+https://github.com/GrotjahnLab/pycurv.git
+git+https://github.com/vladanl/Pyto.git
+git+https://github.com/kalemaria/pycurv.git
 pymeshlab
 pyyaml
 click

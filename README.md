@@ -84,8 +84,8 @@ Individual steps are available as click commands in the terminal, and as functio
 * Files with .log extension are log files, mostly from the output of the pycurv run.
 * Quantifications (plots and statistical tests) are output in csv, svg, and png formats. 
 
-
 ## Troubleshooting
+0. If installation fails, you may want to reference `Install.md` for advanced installation tips (this is especially relevant for M1/M2 macs and Centos7 linux machines)
 1. Warnings of the type `Gaussian or Mean curvature of X has a large computation error`... can be ignored, as they get cleaned up by pycurv
 2. MRC files that are output by AMIRA don't have proper machine stamps by default. They need to be imported with `mrcfile.open(filename, permissive=True)` 
 
@@ -100,6 +100,8 @@ Individual steps are available as click commands in the terminal, and as functio
 8. Pycurv   
     1. Pyto
     2. Graph-tool
+
+
 ## Citation
 The development of this toolkit and examples of useful applications can be found in the following manuscript. Please cite it if you use this software in your research, or extend it to make improvements!
 
