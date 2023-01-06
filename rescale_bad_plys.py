@@ -35,14 +35,15 @@ def fix_ply(ply, xyz, plyout, deldist = 1.5, num_faces = 150000, simplify = True
 if __name__ == "__main__":
     folder = argv[1]
     os.chdir(folder)
-    files = glob.glob("*_scaled.ply")
+    files = glob.glob("*_rescaled.ply")
+    # files = ["TF5_IMM_mito_3_scaled.ply"]
     for file in files:
-        fileout = file.replace("_scaled.ply", "_rescaled.ply")
-        xyzfile = "_".join(file.split("_")[0:2])+".xyz"
-        fix_ply(file, xyzfile, fileout)
-        vtpout = fileout.replace("_rescaled.ply", ".surface.vtp")
+        # fileout = file.replace("_scaled.ply", "_rescaled.ply")
+        # xyzfile = "_".join(file.split("_")[0:2])+".xyz"
+        # fix_ply(file, xyzfile, fileout)
+        vtpout = file.replace("_rescaled.ply", ".surface.vtp")
         plyfile = vtk.vtkPLYReader()
-        plyfile.SetFileName(fileout)
+        plyfile.SetFileName(file)
         plyfile.Update()
         surf = plyfile.GetOutput() 
         writer = vtk.vtkXMLPolyDataWriter()
