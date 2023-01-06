@@ -51,6 +51,10 @@ Individual steps are available as click commands in the terminal, and as functio
     1. `morphometrics_stats.py` is a set of classes and functions to generate graphs and statistics with pandas.
     2. [Paraview](https://www.paraview.org/) for 3D surface mapping of quantifications.
 
+## Troubleshooting
+1. Warnings of the type `Gaussian or Mean curvature of X has a large computation error`... can be ignored, as they get cleaned up by pycurv
+2. The MRC examples are output by AMIRA and don't have proper machine stamps. They need to be imported with `mrcfile.open(filename, permissive=True)`
+
 ## Dependencies
 1. Numpy
 2. Scipy
