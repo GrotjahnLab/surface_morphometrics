@@ -42,14 +42,14 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=1, simplify=True, num_faces=150000,
     print(f"Processing {xyzfile} into {plyfile}")
     ms = pm.MeshSet()
     ms.load_new_mesh(xyzfile)
-    ms.compute_normals_for_point_sets(k=k_neighbors, smoothiter=smooth_iter) # Predict smooth normals
-    ms.surface_reconstruction_screened_poisson(depth=depth, pointweight=pointweight, iters=10, scale=1.2) # Screened Poisson
-    ms.distance_from_reference_mesh(measuremesh = 1, refmesh=0 , maxdist=pm.Percentage(20), signeddist=False) # Delete points that are too far from the reference mesh
-    ms.conditional_vertex_selection(condselect = f'(q>{deldist})') # Select only the best quality vertices
-    ms.conditional_face_selection(condselect = f'(q0>{deldist} || q1>{deldist} || q2>{deldist})') # Select only the best quality vertices
-    ms.delete_selected_faces_and_vertices()
+    ms.compute_normal_for_point_clouds(k=k_neighbors, smoothiter=smooth_iter) # Predict smooth normals
+    ms.generate_surface_reconstruction_screened_poisson(depth=depth, pointweight=pointweight, iters=10, scale=1.2) # Screened Poisson
+    ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh = 1, refmesh=0 , maxdist=pm.PercentageValue(20), signeddist=False) # Delete points that are too far from the reference mesh
+    ms.compute_selection_by_condition_per_vertex(condselect = f'(q>{deldist})') # Select only the best quality vertices
+    ms.compute_selection_by_condition_per_face(condselect = f'(q0>{deldist} || q1>{deldist} || q2>{deldist})') # Select only the best quality vertices
+    ms.meshing_remove_selected_vertices_and_faces()
     if simplify:
-        ms.simplification_quadric_edge_collapse_decimation(targetfacenum=num_faces, qualitythr=0.6, preserveboundary=True, preservenormal=True, optimalplacement=True, planarquadric=True) # Simplify
+        ms.meshing_decimation_quadric_edge_collapse(targetfacenum=num_faces, qualitythr=0.6, preserveboundary=True, preservenormal=True, optimalplacement=True, planarquadric=True) # Simplify
     ms.save_current_mesh(plyfile)
     ms.clear()
     return 0
