@@ -4,3 +4,6 @@ pymeshlab
 pyyaml
 click
 mrcfile
+scikit-learn
+jupyter
+statsmodels
