@@ -8,9 +8,15 @@ __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
 from sys import argv
+import importlib.metadata
 import glob
 import pymeshlab as pm
 import click
+
+# Ensure compatibility with pymeshlab 2022.2.post3
+PML_VER = importlib.metadata.version('pymeshlab')
+if PML_VER == '2022.2.post3':
+    pm.PercentageValue = pm.Percentage
 
 @click.command()
 @click.argument('xyzfile', type=str)
