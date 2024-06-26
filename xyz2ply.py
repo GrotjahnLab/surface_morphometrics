@@ -55,7 +55,7 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=1, simplify=False, num_faces=150000
     ms.compute_normal_for_point_clouds(k=k_neighbors, smoothiter=smooth_iter) # Predict smooth normals
     ms.generate_surface_reconstruction_screened_poisson(depth=depth, pointweight=pointweight, iters=10, scale=1.2) # Screened Poisson
     if ultrafine:
-        ms.generate_resampled_uniform_mesh(cellsize = remesh_sampling ) #pm.PercentageValue(0.099528)
+        ms.generate_resampled_uniform_mesh(cellsize = pm.PercentageValue(0.099528) ) 
         ms.meshing_surface_subdivision_loop()
         ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh = 2, refmesh=0 , maxdist=pm.PercentageValue(20), signeddist=False) # Delete points that are too far from the reference mesh
     else:
