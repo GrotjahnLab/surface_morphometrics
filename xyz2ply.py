@@ -13,7 +13,7 @@ import glob
 import pymeshlab as pm
 import click
 
-# Make code compatible with API in pymeshlab 2022.2.post3
+# Ensure compatibility with pymeshlab 2022.2.post3
 PML_VER = importlib.metadata.version('pymeshlab')
 if PML_VER == '2022.2.post3':
     pm.PercentageValue = pm.Percentage
