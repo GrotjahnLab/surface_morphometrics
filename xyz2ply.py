@@ -34,21 +34,22 @@ def xyz_to_ply_from_CLI(xyzfile, plyfile, pointweight, ultrafine, simplify, num_
     xyz_to_ply(xyzfile, plyfile, pointweight=pointweight, simplify=simplify, num_faces=num_faces, k_neighbors=k_neighbors, deldist=deldist, smooth_iter=smooth_iter, depth=depth)
 
 
-def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=150000, k_neighbors=500, deldist=1.5, smooth_iter=1, depth=9, ultrafine=True, remesh_sampling=0.1):
+def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=150000, k_neighbors=500, deldist=1.5, smooth_iter=1, depth=9, ultrafine=True, remesh_sampling=0.2):
     """Convert an xyz file to a ply file using pymeshlab
 
     Arguments:
     xyzfile {str} -- Input xyz filename
     plyfile {str} -- Output ply filename
-    pointweight {float} -- Screening weight (0 for max smoothness, 1 to 4 for beter fit to points). Default 0.7.
+    ultrafine {bool} -- If True, will use a new routine to generate finer, higher quality meshes. Default True.
     simplify {bool} -- If True, will simplify the mesh to a set number of faces. Default False. Leave False for ultrafine meshes.
     num_faces {int} -- Maximal number of allowed faces after decimation. Default 150000, use more for finer sampling but with greater computational cost.
-    k_neighbors {int} -- Number of neighbors for point cloud normal estimation - default 400
+    depth {int} -- Depth of screened poisson octree. Higher numbers mean more complex meshes but can incorporate stepping artifacts. Default 9.
+    pointweight {float} -- Screening weight (0 for max smoothness, 1 to 4 for beter fit to points). Default 0.7.
+    k_neighbors {int} -- Number of neighbors for point cloud normal estimation - default 500
     deldist {int} -- Max distance to extrapolate. Default 1.5; distances are in the point cloud distance unit (default nm).
     smooth_iter {int} -- Number of smoothing iterations. Default 1.
-    ultrafine {bool} -- If True, will use a new routine to generate finer, higher quality meshes. Default True.
     simplify {bool} -- If True, will simplify the mesh to a set number of faces. Default True.
-    remesh_sampling {int} -- Sampling rate in world units for the remeshing. Default 1.
+    remesh_sampling {float} -- The percentage of the total size of the mesh to do uniform resampling on. Lower values mean more triangles. Default 0.2.
     """
     print(f"Processing {xyzfile} into {plyfile}")
     ms = pm.MeshSet()
@@ -59,9 +60,9 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=1500
         ms.meshing_surface_subdivision_loop(iterations=18)
         ms.generate_resampled_uniform_mesh(cellsize=pm.PercentageValue(0.05))
         ms.meshing_surface_subdivision_loop(iterations=6)
-        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=2, refmesh=0, maxdist = pm.PercentageValue(0.2), signeddist=False)
+        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=2, refmesh=0, maxdist = pm.PercentageValue(remesh_sampling), signeddist=False)
     else:
-        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh = 1, refmesh=0 , maxdist=pm.PercentageValue(0.2), signeddist=False) # Delete points that are too far from the reference mesh
+        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh = 1, refmesh=0 , maxdist=pm.PercentageValue(remesh_sampling), signeddist=False) # Delete points that are too far from the reference mesh
     ms.compute_selection_by_condition_per_vertex(condselect = f'(q>{deldist})') # Select only the best quality vertices
     ms.compute_selection_by_condition_per_face(condselect = f'(q0>{deldist} || q1>{deldist} || q2>{deldist})') # Select only the best quality vertices
     ms.meshing_remove_selected_vertices_and_faces()

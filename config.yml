@@ -6,17 +6,19 @@ segmentation_values: # The value used to represent each feature, and the name of
   ER: 3
 surface_generation:
   angstroms: false # Default scaling adjusts so surfaces are nm-scaled, if set to true surfaces are not rescaled and remain angstrom-scaled.
-  simplify: True # You should not turn this off. Non-simplified surfaces can be VERY slow and there is no real benefit.
-  max_triangles: 150000 # if more than this number of triangles are generated, the surface is decimated to this number
+  ultrafine: true # If true, the surface is generated with a new high quality protocol. This makes calculation much slower but the surface is much better for sampling density.
+  mesh_sampling: 1 # Approximate mesh sampling rate, 
+  simplify: False # Non-simplified surfaces can be VERY slow, but are better for sampling the coulomb potential.
+  max_triangles: 300000 # If simplifying and more than this number of triangles are generated, the surface is decimated to this number
   extrapolation_distance: 1.5 # Distance in nm (or angstroms, if angstrom setting is True) to extrapolate the surface
   octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
   point_weight: 0.7 # Smaller numbers have stronger weight towards fitting segmented points, larger numbers have stronger weight towards generating a smooth surface
-  neighbor_count: 70 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
+  neighbor_count: 400 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
   smoothing_iterations: 1 # Number of smoothing iterations to perform for estimating normals. You should usually leave this at 1.
 curvature_measurements:
-  radius_hit: 8 # This corresponds to the radius of the smallest feature of interest, roughly, for neighborhood determination. 8-15 seems to be a good range for mitochondria
+  radius_hit: 9 # This corresponds to the radius of the smallest feature of interest, roughly, for neighborhood determination. 8-15 seems to be a good range for mitochondria
   min_component: 30 # The minimum number of triangles for a component to be considered for curvature measurement.
-  exclude_borders: 0 # Values greater than zero exclude the border from the curvature calculation by n nm/angstroms.
+  exclude_borders: 1 # Values greater than zero exclude the border from the curvature calculation by n nm/angstroms.
 distance_and_orientation_measurements:
   mindist: 3 # Minimum distance between two points for them to be considered for distance measurement.
   maxdist: 400 # Maximum distance between two points for them to be considered for distance measurement.
