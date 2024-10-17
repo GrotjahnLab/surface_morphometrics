@@ -1,9 +1,10 @@
-git+https://github.com/vladanl/Pyto.git
+git+https://github.com/bbarad/Pyto.git@patch-2
 git+https://github.com/kalemaria/pycurv.git
-pymeshlab
+pymeshlab==2022.2.post3
 pyyaml
 click
 mrcfile
 scikit-learn
 jupyter
 statsmodels
+scipy==1.7

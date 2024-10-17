@@ -1,6 +1,6 @@
 name: morphometrics
 dependencies:
-  - conda-forge::python=3.9
+  - conda-forge::python=3.7.9
   - conda-forge::pyqt
   - conda-forge::matplotlib=3.3.3
   - conda-forge::pandas
