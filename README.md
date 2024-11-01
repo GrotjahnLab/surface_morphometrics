@@ -10,11 +10,49 @@ using the Screened Poisson algorithm, calculate morphological features including
 using pycurv's vector voting framework, and tools to convert these morphological quantities into morphometric insights.
 
 
-## Installation:
+## Installation Options:
+
+## Option 1: Using Docker 
+1. Clone this git repository: 
+```bash
+git clone https://github.com/grotjahnlab/surface_morphometrics.git
+cd surface_morphometrics
+```
+2. Start the containerized environment:
+```bash
+cd docker
+./sm-up.sh
+```
+This will pull and start the Docker container with all dependencies pre-installed.
+3. When finished, exit the container and stop it:
+```bash
+exit # Exit the container
+./sm-down.sh # Stop the container
+```
+
+## Option 2: Manual Installation
 1. Clone this git repository: `git clone https://github.com/grotjahnlab/surface_morphometrics.git`
 2. Install the conda environment: `conda env create -f environment.yml`
 3. Activate the conda environment: `conda activate morphometrics`
 4. Install additional dependencies: `pip install -r pip_requirements.txt`
+
+## Working with Docker Container
+
+1. Starting a Session:
+```bash
+cd surface_morphometrics # Go to project directory
+cd docker                # Enter docker directory
+./sm-up.sh               # Start and enter container
+```
+2. Inside Container:
+- The environment is pre-configured
+- All dependencies are installed
+- You can directly run the pipeline commands
+3. Ending a Session:
+```bash
+exit           # Exit the container
+./sm-down.sh   # Stop the container
+```
 
 ## Example data
 

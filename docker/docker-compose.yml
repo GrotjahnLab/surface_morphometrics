@@ -1,0 +1,24 @@
+version: "2.4"
+services:
+  surface_morphometrics:
+    image: hkapa/surface_morphometrics:v1.1
+    pull_policy: always
+    container_name: surface_morphometrics_container
+    volumes:
+      - ..:/surface_morphometrics
+    working_dir: /surface_morphometrics
+    entrypoint: ["./docker/entrypoint.sh"]
+    tty: true
+    stdin_open: true
+    init: true
+    stop_grace_period: 20s
+    stop_signal: SIGTERM
+    healthcheck:
+      test: ["CMD-SHELL", "conda run -n morphometrics conda info --envs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    environment:
+      - CONDA_DEFAULT_ENV=morphometrics
+      - PYTHONUNBUFFERED=1
