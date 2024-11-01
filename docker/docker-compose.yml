@@ -1,6 +1,7 @@
 version: "2.4"
 services:
   surface_morphometrics:
+    platform: linux/${TARGETARCH:-amd64}
     image: hkapa/surface_morphometrics:v1.1
     pull_policy: always
     container_name: surface_morphometrics_container
