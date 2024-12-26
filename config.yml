@@ -6,9 +6,9 @@ segmentation_values: # The value used to represent each feature, and the name of
   ER: 3
 surface_generation:
   angstroms: false # Default scaling adjusts so surfaces are nm-scaled, if set to true surfaces are not rescaled and remain angstrom-scaled.
-  ultrafine: true # If true, the surface is generated with a new high quality protocol. This makes calculation much slower but the surface is much better for sampling density.
-  mesh_sampling: 1 # Approximate mesh sampling rate, 
-  simplify: False # Non-simplified surfaces can be VERY slow, but are better for sampling the coulomb potential.
+  ultrafine: false # If true, the surface is generated with a new high quality protocol. This makes calculation much slower but the surface is much better for sampling density.
+  mesh_sampling: 1 # Approximate mesh sampling rate, for ultrafine mode
+  simplify: true # Non-simplified surfaces can be VERY slow, but are better for sampling the coulomb potential.
   max_triangles: 300000 # If simplifying and more than this number of triangles are generated, the surface is decimated to this number
   extrapolation_distance: 1.5 # Distance in nm (or angstroms, if angstrom setting is True) to extrapolate the surface
   octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
