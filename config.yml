@@ -12,7 +12,7 @@ surface_generation:
   max_triangles: 300000 # If simplifying and more than this number of triangles are generated, the surface is decimated to this number
   extrapolation_distance: 1.5 # Distance in nm (or angstroms, if angstrom setting is True) to extrapolate the surface
   octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
-  point_weight: 0.7 # Smaller numbers have stronger weight towards fitting segmented points, larger numbers have stronger weight towards generating a smooth surface
+  point_weight: 0.7 # Larger numbers have stronger weight towards fitting segmented points, smaller numbers have stronger weight towards generating a smooth surface
   neighbor_count: 400 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
   smoothing_iterations: 1 # Number of smoothing iterations to perform for estimating normals. You should usually leave this at 1.
 curvature_measurements:
