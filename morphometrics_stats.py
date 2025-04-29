@@ -20,6 +20,8 @@ import matplotlib
 matplotlib.use("agg")
 import matplotlib.pyplot as plt
 from textwrap import wrap
+import scipy.stats as st
+
 SMALL_SIZE = 8
 MEDIUM_SIZE = 9
 BIGGER_SIZE = 10.5
@@ -46,8 +48,12 @@ blue_light = [0,.3,1,.3]
 my_cmap = copy.copy(matplotlib.cm.get_cmap('viridis')) # copy the default cmap
 my_cmap.set_bad(my_cmap.colors[0])
 
-colors = [purple,green, blue]
-colors_light = [purple_light, green_light, blue_light]
+colors = [purple,green, blue]*4
+colors_light = [purple_light, green_light, blue_light]*4
+# colors = ["#5DA5DA", "#FAA43A", "#60BD68", "#F17CB0", "#B276B2", "#DECF3F", "#F15854", "#4D4D4D"] # "#B2912F"
+# face_alphas = [0.3]*len(colors)
+# colors_light = list(zip(colors, face_alphas))
+
 
 def weighted_avg_and_std(values, weights):
     """
@@ -84,6 +90,7 @@ class Experiment():
             fns = []
             for surface_base in surface_bases:
                 filename = folder+name+"_"+surface_base+file_extension
+                print(filename)
                 if os.path.isfile(filename):
                     surfs.append(surface_base)
                     fns.append(filename)
@@ -233,7 +240,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
         for index, val in enumerate(datasets):
             raw_file.write(f"{condition_names[index]} {morph_names[index]},"+",".join(map(str, val))+"\n")
     with open(filename, 'w') as file:
-        file.write(f"Base Experiment,Stat Type,Utest_Stars,KStest_Stars,Sample A Condition,Sample A Morph,Sample A Mean,Sample B Condition,Sample B Morph,Sample B Mean,U,P_U,T,P_T,KS,P_KS,n_A,n_B\n")
+        file.write(f"Base Experiment,Stat Type,Utest_Stars,KStest_Stars,Sample A Condition,Sample A Morph,Sample A Mean,Sample A 95% Error, Sample B Condition,Sample B Morph,Sample B Mean,Sample B 95% Error,U,P_U,T,P_T,KS,P_KS,n_A,n_B\n")
         for i, set_a in enumerate(datasets):
             for j, set_b in enumerate(datasets):
                 if j<=i: 
@@ -264,7 +271,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
                     print(e)
                     u,p_u,t,p_t = -1,-1,-1,-1
                 # print(p_u, p_t)
-                file.write(f"{basename},{test_type},{stat_stars},{stars_ks},{condition_names[i]},{morph_names[i]},{np.mean(set_a)},{condition_names[j]},{morph_names[j]},{np.mean(set_b)},{u},{p_u},{t},{p_t},{ks},{p_ks},{len(set_a)},{len(set_b)}\n")
+                file.write(f"{basename},{test_type},{stat_stars},{stars_ks},{condition_names[i]},{morph_names[i]},{np.mean(set_a)},{st.sem(set_a)*1.96},{condition_names[j]},{morph_names[j]},{np.mean(set_b)},{st.sem(set_b)*1.96},{u},{p_u},{t},{p_t},{ks},{p_ks},{len(set_a)},{len(set_b)}\n")
     figure_filename = filename[:-3]+"svg"
     fig,ax=plt.subplots(figsize=figsize)
     ax.set_title(basename)
@@ -277,7 +284,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     fig.savefig(figure_filename[:-3]+"png")
 
 
-def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(2.26,1.64), logx=False, vlines = True, legend=True, color_offset=0):
+def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(6,4), logx=False, vlines = True, legend=True, color_offset=0):
     """Construct an area-weighted histogram of the data.
     Args:
         data (array-like): list of arrays to be independently plotted.
@@ -301,7 +308,7 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         bins = np.logspace(np.log10(range[0]),np.log10(range[1]), bins)
         ax.set_xscale("log")
     for index, value in enumerate(data):
-        n,binset,_ = ax.hist(value, bins=bins, weights=areas[index], label=labels[index], ec=colors[index], fc=colors_light[index],histtype="stepfilled", density=False, range = range)
+        n,binset,_ = ax.hist(value, bins=bins, weights=areas[index], label=labels[index], ec=colors[index],fc=colors_light[index],histtype="stepfilled", density=True, range = range) #
         if vlines: 
             delta = (binset[1]-binset[0])/2
             idx = n.argmax()
