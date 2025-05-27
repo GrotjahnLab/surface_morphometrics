@@ -99,7 +99,7 @@ def run_mrc(filename):
     # Load the mrc data
     mrcbase = filename.split(".mrc")[0].split("/")[-1]
     print(mrcbase)
-    files = glob(workfolder+mrcbase+f"*.AVV_rh8.csv")
+    files = glob(workfolder+mrcbase+f"*.AVV_rh*.csv")
     print(files)
     data,data_matrix,voxsize, origin = load_mrc(filename)
     print(data.shape)
