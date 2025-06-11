@@ -19,6 +19,8 @@ base_folder = "/Users/bbarad/Downloads/TE/morphometrics/"
 components = ["OMM", "IMM", "ER"]
 # filenames = [base_folder + f"tomo_1_{component}_sampling_isonet.csv" for component in components]
 AVERAGE_RAD = 12
+RH = 8
+
 def find_mins(y):
     mid = int(np.round(len(y)/2))
     left_side = np.argmin(y[:mid])
@@ -95,7 +97,7 @@ def find_two_peaks(x,y):
 filenames = {component:[] for component in components}
 outfiles = {component: [] for component in components}
 for component in components:
-    basename = base_folder + f"*{component}.AVV_rh8_sampling.csv"
+    basename = base_folder + f"*{component}.AVV_rh{RH}_sampling.csv"
     fileset = glob(basename)
     # fileset.sort(key=lambda x: int(Path(x).stem.split("_")[-4].split(".")[0]))
     filenames[component].extend(fileset)
