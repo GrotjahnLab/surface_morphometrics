@@ -12,7 +12,49 @@
 ### `Area`
 - **Type:** Float  
 - **Description:**  
-  The surface area of the individual triangle. Important for quantitative analysis, as it allows for area-weighted statistical calculations (e.g., histograms). By weighting metrics by triangle area, larger membrane regions contribute proportionally more to overall statistics, providing a more accurate representation of the surface’s properties.
+  The surface area of the individual triangle. Important for quantitative analysis, as it allows for area-weighted statistical calculations (e.g., histograms). By weighting metrics by triangle area, larger membrane regions contribute proportionally more to overall statistics, providing a more accurate representation of the surface's properties.
+
+---
+
+### `min_curvature`
+- **Type:** Float  
+- **Description:**  
+  The minimum absolute curvature value at each point on the surface.
+
+---
+
+### `max_curvature`
+- **Type:** Float  
+- **Description:**  
+  The maximum absolute curvature value at each point on the surface.
+
+---
+
+### `Gauss_curvature`
+- **Type:** Float  
+- **Description:**  
+  The Gaussian curvature measured at each point on the surface, prior to vector voting. Calculated as the product of the two principal curvatures at that point.
+
+---
+
+### `mean_curvature`
+- **Type:** Float  
+- **Description:**  
+  The mean curvature value computed at each point on the surface, before any vector voting or smoothing operations. Mean curvature is calculated as the average of the curvatures in all directions at a point.
+
+---
+
+### `kappa_1`
+- **Type:** Float  
+- **Description:**  
+  The first principal curvature value at each point on the surface.
+
+---
+
+### `kappa_2`
+- **Type:** Float  
+- **Description:**  
+  The second principal curvature value at each point on the surface.
 
 ---
 
@@ -91,9 +133,22 @@
 
 ### `self_dist_min`
 - **Description:**  
-  The shortest distance from the center of a triangle to another part of the same surface, measured along the triangle’s normal vector. For each triangle, two rays are cast from its center along the normal vector (`n_v`), one in each direction. The first intersection point with the mesh is found in each direction; `self_dist_min` is the shorter of these distances. If no intersection is found, the value is NaN.
+  The shortest distance from the center of a triangle to another part of the same surface, measured along the triangle's normal vector. For each triangle, two rays are cast from its center along the normal vector (`n_v`), one in each direction. The first intersection point with the mesh is found in each direction; `self_dist_min` is the shorter of these distances. If no intersection is found, the value is NaN.
 
 ---
+
+### `self_id_min`
+- **Description:**  
+  The index of the triangle on the same surface that was intersected at the distance reported in `self_dist_min`.
+
+---
+
+### `self_dist_far`
+- **Description:**  
+  The longest distance from the center of a triangle to another part of the same surface, measured along the triangle's normal vector. This value is calculated in the same process as `self_dist_min`.
+
+---
+
 ### `self_id_far`
 - **Description:**  
   The index of the triangle on the same surface that was intersected at the distance reported in `self_dist_far`.
@@ -124,15 +179,27 @@
 
 ---
 
-### `n_v_x`, `n_v_y`, `n_v_z`
+### `Subcompartment`
 - **Description:**  
-  The x, y, and z components of the voted normal vector for each triangle.
+  A label assigned to a group of triangles on a larger surface to define a region of biological interest.
+
+---
+
+### `xyz_x`, `xyz_y`, `xyz_z`
+- **Description:**  
+  The coordinates representing the center of each triangle in the mesh.
 
 ---
 
 ### `normal_x`, `normal_y`, `normal_z`
 - **Description:**  
   The x, y, and z components of the normal vector representing the orientation of the surface at each point, as a unit vector in 3D space.
+
+---
+
+### `n_v_x`, `n_v_y`, `n_v_z`
+- **Description:**  
+  The x, y, and z components of the voted normal vector for each triangle.
 
 ---
 
@@ -151,3 +218,15 @@
 ### `t_2_x`, `t_2_y`, `t_2_z`
 - **Description:**  
   The components of the second principal direction (tangent) vector at each vertex, typically perpendicular to the first principal direction.
+
+---
+
+### `Average_width`
+- **Description:**  
+  A value representing the average width of an entire connected component of a surface. This is a per-component metric, not a per-triangle one.
+
+---
+
+### `Thickness`
+- **Description:**  
+  A per-triangle value representing the local thickness of a single membrane sheet. It is calculated by measuring the shortest distance from a triangle's center along its normal vector until the surface is intersected again.
