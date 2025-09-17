@@ -9,6 +9,8 @@ A pipeline of tools to generate robust open mesh surfaces from voxel segmentatio
 using the Screened Poisson algorithm, calculate morphological features including curvature and membrane-membrane distance
 using pycurv's vector voting framework, and tools to convert these morphological quantities into morphometric insights.
 
+📖 **[Complete Quantifications Documentation](quantifications_documentation.md)** - Reference guide for all morphological measurements and their interpretations.
+
 
 ## Installation Options:
 
@@ -111,6 +113,7 @@ Individual steps are available as click commands in the terminal, and as functio
 3. Morphometric Quantification - there is no click function for this, as the questions answered depend on the biological system of interest!
     1. `morphometrics_stats.py` is a set of classes and functions to generate graphs and statistics with pandas.
     2. [Paraview](https://www.paraview.org/) for 3D surface mapping of quantifications.
+    3. **[Quantifications Documentation](quantifications_documentation.md)** - Complete reference for all morphological measurements and their interpretations.
 
 ## File Descriptions:
 * Files with.xyz extension are point clouds converted, in nm or angstrom scale. This is a flat text file with `X Y Z` coordinates in each line.
