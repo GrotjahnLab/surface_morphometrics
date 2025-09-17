@@ -1,5 +1,4 @@
 # Morphometrics Quantifications Documentation
-
 ---
 
 ### `Index`
@@ -33,14 +32,14 @@
 ### `Gauss_curvature`
 - **Type:** Float  
 - **Description:**  
-  The Gaussian curvature measured at each point on the surface, prior to vector voting. Calculated as the product of the two principal curvatures at that point.
+  The Gaussian curvature measured at each point on the surface, prior to vector voting. Calculated as the product of the two principal curvatures at that point. **Note:** Use `gauss_curvature_vv` instead for analysis, as it provides more robust measurements.
 
 ---
 
 ### `mean_curvature`
 - **Type:** Float  
 - **Description:**  
-  The mean curvature value computed at each point on the surface, before any vector voting or smoothing operations. Mean curvature is calculated as the average of the curvatures in all directions at a point.
+  The mean curvature value computed at each point on the surface, before any vector voting or smoothing operations. Mean curvature is calculated as the average of the curvatures in all directions at a point. **Note:** Use `mean_curvature_vv` instead for analysis, as it provides more robust measurements.
 
 ---
 
@@ -61,7 +60,7 @@
 ### `gauss_curvature_vv`
 - **Type:** Float  
 - **Description:**  
-  The Gaussian curvature, calculated as the product of the two principal curvatures (`kappa_1 * kappa_2`). The sign indicates local surface shape:
+  **PREFERRED VERSION** - The Gaussian curvature, calculated as the product of the two principal curvatures (`kappa_1 * kappa_2`) after vector voting. The sign indicates local surface shape:
   - **Positive (> 0):** Surface is elliptical or "bowl-shaped"
   - **Negative (< 0):** Surface is hyperbolic or "saddle-shaped"
   - **Zero (= 0):** Surface is flat in at least one direction
@@ -71,7 +70,7 @@
 ### `mean_curvature_vv`
 - **Type:** Float  
 - **Description:**  
-  The mean curvature, calculated as the average of the two principal curvatures: (`kappa_1 + kappa_2`) / 2. Describes the average bending of the surface at a specific point:
+  **PREFERRED VERSION** - The mean curvature, calculated as the average of the two principal curvatures: (`kappa_1 + kappa_2`) / 2 after vector voting. Describes the average bending of the surface at a specific point:
   - **Positive (> 0):** The surface is, on average, curving inwards (concave)
   - **Negative (< 0):** The surface is, on average, curving outwards (convex)
   - **Zero (= 0):** The surface is a minimal surface
@@ -90,7 +89,7 @@
 
 ### `shape_index_VV`
 - **Description:**  
-  A continuous value ranging from -1 to +1 that describes the local shape of the surface at each triangle, derived from principal curvatures (`kappa_1` and `kappa_2`).
+  **PREFERRED VERSION** - A continuous value ranging from -1 to +1 that describes the local shape of the surface at each triangle, derived from principal curvatures (`kappa_1` and `kappa_2`) after vector voting.
 - **Values:**
   - **-0.75:** Trough
   - **-0.5:** Rut (concave cylinder)
@@ -106,13 +105,13 @@
 ### `curvedness_vv`
 - **Type:** Float  
 - **Description:**  
-  A measure of the overall magnitude of curvature at a given point on the surface, calculated as `sqrt((kappa_1^2 + kappa_2^2) / 2)`. Always non-negative.
+  **PREFERRED VERSION** - A measure of the overall magnitude of curvature at a given point on the surface, calculated as `sqrt((kappa_1^2 + kappa_2^2) / 2)` after vector voting. Always non-negative.
 
 ---
 
 ### `shape_index_cat`
 - **Description:**  
-  A numerical property that categorizes the continuous `shape_index_VV` value into one of nine shape classes, storing a single representative float value for each class.
+  A numerical property that categorizes the continuous `shape_index_VV` value into one of nine shape classes, storing a single representative float value for each class. Based on the preferred vector-voted shape index.
 - **Values:**
   - **-0.75:** Trough
   - **-0.5:** Rut (concave cylinder)
