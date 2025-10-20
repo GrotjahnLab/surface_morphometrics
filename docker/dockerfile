@@ -1,0 +1,46 @@
+# Using official miniconda3 image as the base image
+FROM continuumio/miniconda3
+
+# Set environment variables
+ENV CONDA_ENV_NAME=morphometrics
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    git \
+    build-essential \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory
+WORKDIR /surface_morphometrics
+
+# Copy the environment and requirements files
+COPY environment.yml pip_requirements.txt ./
+
+# Install the conda environment
+RUN conda env create -f environment.yml  && \
+    conda clean -afy
+
+# Initialize conda in bash
+RUN conda init bash && \
+    echo "conda activate morphometrics" >> ~/.bashrc
+
+# Copy the scripts first and make them executable
+COPY docker/entrypoint.sh docker/sm-up.sh docker/sm-down.sh /surface_morphometrics/docker/
+RUN chmod +x /surface_morphometrics/docker/entrypoint.sh \
+    && chmod +x /surface_morphometrics/docker/sm-up.sh \
+    && chmod +x /surface_morphometrics/docker/sm-down.sh 
+
+# Activate the environment and install pip dependencies
+SHELL ["conda", "run", "-n", "morphometrics", "/bin/bash", "-c"]
+RUN pip install -r pip_requirements.txt && pip cache purge
+
+
+# Copy the rest of the application code
+COPY . .
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/usr/bin/tini", "--", "/surface_morphometrics/docker/entrypoint.sh"]
+CMD ["bash"]
