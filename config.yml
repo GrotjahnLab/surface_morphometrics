@@ -1,9 +1,17 @@
-data_dir: "./example_data/"
-work_dir: "./morphometrics/"
+# UNIVERSAL
+data_dir: "/Users/bbarad/morphometrics/neal_seg/"
+work_dir: "/Users/bbarad/morphometrics/neal_work/"
+exp_name: "test" # Subdirectory of work folder for this experiment
 segmentation_values: # The value used to represent each feature, and the name of the feature.
   OMM: 1
   IMM: 2
   ER: 3
+  Vesicle: 4
+  PM: 5
+  MT: 6
+cores: 14 # Number of cores to use for parallel processing.
+
+#SEGMENTATION TO MESH 
 surface_generation:
   angstroms: false # Default scaling adjusts so surfaces are nm-scaled, if set to true surfaces are not rescaled and remain angstrom-scaled.
   ultrafine: false # If true, the surface is generated with a new high quality protocol. This makes calculation much slower but the surface is much better for sampling density.
@@ -14,7 +22,10 @@ surface_generation:
   octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
   point_weight: 0.7 # Larger numbers have stronger weight towards fitting segmented points, smaller numbers have stronger weight towards generating a smooth surface
   neighbor_count: 400 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
+
   smoothing_iterations: 1 # Number of smoothing iterations to perform for estimating normals. You should usually leave this at 1.
+
+# PYCURV
 curvature_measurements:
   radius_hit: 9 # This corresponds to the radius of the smallest feature of interest, roughly, for neighborhood determination. 8-15 seems to be a good range for mitochondria
   min_component: 30 # The minimum number of triangles for a component to be considered for curvature measurement.
@@ -25,15 +36,40 @@ distance_and_orientation_measurements:
   tolerance: 0.1 # Tolerance for determining if a triangle is contacted by a line.
   verticality: true # Measure verticality (angle relative to growth plane). 
   intra: # Intra-surface distance/orientation (verticality) measurements
-    - IMM
     - OMM
+    - IMM
     - ER
+    - Vesicle
+    - PM
+    - MT
   relative_orientation: true # Measure relative orientation (angle relative to nearest neighbor surface).
   inter: # Intersurface distance/orientation measurements. Writes out symmetrically so you do not need to give symmetric options.
     OMM:
       - IMM
       - ER
-cores: 4 # Number of cores to use for parallel processing.
+      - PM
+      - Vesicle
+      - MT
+    ER:
+      - PM
+      - MT
+      - Vesicle
+    PM:
+      - Vesicle
+      - MT
+    Veiscle:
+      - PM
+# thickness_measurements:
+#   sampling: 1.0
+#   fit_curve: True 
+#   flip_y: false
+#   leaflets: true
+#   components:
+#     - Spherule
+#     - ER
+#     - NE
+#     - OMM
+#     - IMM
 
 
 
