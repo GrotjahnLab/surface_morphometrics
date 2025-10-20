@@ -15,8 +15,8 @@ from tqdm import tqdm
 from morphometrics_stats import histogram
 from intradistance_verticality import export_csv
 
-base_folder = "/Users/bbarad/Downloads/TE/morphometrics/"
-components = ["OMM", "IMM", "ER"]
+base_folder = "/Users/bbarad/Downloads/OneDrive_1_5-12-2025/morphometrics2/"
+components = ["NM", "ER", "RO", "Golgi"]
 # filenames = [base_folder + f"tomo_1_{component}_sampling_isonet.csv" for component in components]
 AVERAGE_RAD = 12
 RH = 8
@@ -124,7 +124,7 @@ with open("component_list.csv", "w") as compfile:
             print(comp_num)
             # Load thickness csv file (headerless)
             thickness_set = pd.read_csv(filename, header=None)
-            graph_file = filename[:-13]+"_refined.gt"
+            graph_file = filename[:-13]+".gt"
             csv_outfile = filename[:-13]+".csv"
             graph_file_final = filename[:-13]+"_refined.gt"
             tg = TriangleGraph()
@@ -149,15 +149,9 @@ with open("component_list.csv", "w") as compfile:
             per_surface_thickness = []
             per_triangle_offset = []
             for i in tqdm(range(len(rad_curv))):
-                # if i - AVERAGER/2 < 0:
-                #     imin = 0
-                #     imax = AVERAGER
-                # elif i+AVERAGER/2 >= len(rad_curv):
-                #     imin=-AVERAGER
-                #     imax=-1
-                # else:
-                #     imin = int(i - AVERAGER/2)
-                #     imax = int(i+AVERAGER/2)
+                # per_surface_thickness.append(1.)
+                # per_triangle_offset.append(0.)
+                ## START LOCAL CALCULATION
                 l,neighbors = xyztree.query(xyz[i],k=500, distance_upper_bound=AVERAGE_RAD, workers=-1)
                 neighbors = neighbors[np.where(l != np.inf)]
                 l = l[np.where(l != np.inf)]
@@ -168,7 +162,7 @@ with open("component_list.csv", "w") as compfile:
 
                 ipk = x[np.argmax(dat)]
                 p0 = [0.02,ipk-0.5,1.5,0.02,ipk+0.5,1.5,0] # initial guess - positions 1 and 4 are the critical centers!
-                bounds = ([0.005,ipk-6,0.8,0.005,ipk-2,0.8,-1],[0.04,ipk+2,2.2,0.04,ipk+6,2.2,1]) # range of 8 for each center (up to 12 apart total), 0.7 to 2.2 thickness 
+                bounds = ([0.005,ipk-6,0.8,0.005,ipk-1.5,0.8,-1],[0.04,ipk+1.5,2.2,0.04,ipk+6,2.2,1]) # range of 8 for each center (up to 12 apart total), 0.7 to 2.2 thickness 
                 mins = find_mins(dat)
 
                 errfunc = lambda p,a,b: (dual_gaussian(a,*p)-b)**2
@@ -190,6 +184,7 @@ with open("component_list.csv", "w") as compfile:
                 except:
                     per_surface_thickness.append(np.nan)
                     per_triangle_offset.append(0)
+                # END LOCAL CALCULATION
             # print(per_triangle_offset)
             thickness_measurements.append(per_surface_thickness)
             # temp_thicknesses = []

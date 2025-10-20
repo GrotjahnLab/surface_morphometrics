@@ -1,7 +1,10 @@
 name: morphometrics
+channels:
+  - conda-forge
+  - andfoy
 dependencies:
   - conda-forge::python=3.9
-  - conda-forge::pyqt
+  - andfoy::pyqt
   - conda-forge::matplotlib=3.3.3
   - conda-forge::pandas
   - conda-forge::graph-tool

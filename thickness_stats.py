@@ -26,13 +26,13 @@ print("Unpickling UF")
 with open(startdir+'UF.pkl', 'rb') as file:
     uf = pickle.load(file)
 print("Unpickling Other")
-with open(startdir+'other_org_2.pkl', 'rb') as file:
+with open(startdir+'other_org_4.pkl', 'rb') as file:
     other = pickle.load(file)
 
 # Remove cases where the thickness failed to move from the exact initialization value - these are artifactual
-for list in ue,uf,other:
-    for key in list.tomograms:
-        tomo = list.tomograms[key]
+for groups in ue,uf,other:
+    for key in groups.tomograms:
+        tomo = groups.tomograms[key]
         for name in tomo.dataframe_names:
             tomo[name] = tomo[name][tomo[name].thickness != 4.00]
     
@@ -46,26 +46,43 @@ for key, value in enumerate(ue.tomograms):
 thicknesses = {}
 total_thicknesses = {}
 total_areas = {}
-for list in ue,uf,other:
-    for key in list.tomograms:
-        tomo = list.tomograms[key]
+for toms in ue,uf,other:
+    for key in toms.tomograms:
+        tomo = toms.tomograms[key]
         for name in tomo.dataframe_names:
             name = str(name)
+            if name == "COP":
+                continue
+            if name == "ER":
+                continue
+            if name == "Golgi":
+                continue
             if name not in thicknesses:
                 thicknesses[name] = []
                 total_thicknesses[name] = []
                 total_areas[name] = []
-            thicknesses[name].append(weighted_median(tomo[name].thickness, tomo[name].area))
+            if "unique_component" not in tomo[name].columns:
+                thicknesses[name].append(weighted_median(tomo[name].thickness, tomo[name].area))
+                continue
+
+            for component in tomo[name].unique_component.unique():
+                df = tomo[name][tomo[name].unique_component == component]
+                if sum(df.area) < 1000:
+                    continue
+                thicknesses[name].append(weighted_median(df.thickness, df.area))
             # thicknesses[name].append(weighted_histogram_peak(tomo[name].thickness, tomo[name].area, 100, [1.5,7.5]))
-            total_thicknesses[name].extend(tomo[name].thickness)
-            total_areas[name].extend(tomo[name].area)
+            total_thicknesses[name].extend(df.thickness)
+            total_areas[name].extend(df.area)
 
 
 print(thicknesses)
 print(thicknesses.keys())
-conditions=['IMM', 'OMM', 'ER', 'Vesicles'] # , 'Golgi', 'COP'
+conditions = thicknesses.keys()
+# conditions = list(conditions)
+conditions=['IMM', 'OMM', 'Smooth_ER', 'Ribo_ER', 'Vesicles'] # , 'Golgi', 'COP'
 morphologies = ["" for i in conditions]
 thicknesses_all = [total_thicknesses[name] for name in conditions]
+print(len(thicknesses_all))
 areas_all = [total_areas[name] for name in conditions]
 histogram(thicknesses_all, areas_all, conditions, "Thickness (nm)", filename="thick_hist.svg", bins=100, range=[1.5, 7.5], xlabel="Thickness (nm)", vlines=False)
 
@@ -232,6 +249,27 @@ statistics(thicknesses, "Thickness", conditions, compartments, test_type="median
 # reg = LinearRegression().fit(np.reshape(curvature, (-1,1)), np.reshape(thickness,(-1,1)))
 # print(reg.score(np.reshape(curvature, (-1,1)), np.reshape(thickness,(-1,1))), reg.intercept_, reg.coef_)
 
+# verticality vs thickness
+# generate 2d histogram of curvature vs thickness
+# for IMM
+verticality = []
+thickness = []
+curvature_areas = []
+for list in ue,uf:
+    for key in list.tomograms:
+        tomo = list.tomograms[key]
+        if "IMM" in tomo.dataframe_names:
+            df = tomo["IMM"]
+            df=df[df.thickness > 0]
+            verticality.extend(df.verticality)
+            thickness.extend(df.thickness)
+            curvature_areas.extend(df.area)
+
+
+twod_histogram(verticality, thickness, curvature_areas, "Verticality (º)", "Thickness (nm)", "Thickness vs Verticality", filename="verticality_thickness.svg", bins=[100,100], range=[[0, 90], [2.5, 4.5]], log=True)
+reg = LinearRegression().fit(np.reshape(verticality, (-1,1)), np.reshape(thickness,(-1,1)))
+print(reg.score(np.reshape(verticality, (-1,1)), np.reshape(thickness,(-1,1))), reg.intercept_, reg.coef_)
+
 # # Curvature vs thickness cristae
 # # generate 2d histogram of curvature vs thickness
 # # for IMM
@@ -341,7 +379,6 @@ statistics(thicknesses, "Thickness", conditions, compartments, test_type="median
 # statistics(thicknesses, "Thickness", conditions, morphologies, test_type="medians", filename="thickness_ER_contact.csv", ylabel="Distance (nm)")
 
 
-# Curvature statistics
 # Calculate thickness statistics
 # Violin plot
 thicknesses = {}
@@ -352,12 +389,14 @@ for list in [other]:
         tomo = list.tomograms[key]
         for name in tomo.dataframe_names:
             name = str(name)
+
             if name not in thicknesses:
                 thicknesses[name] = []
                 total_thicknesses[name] = []
                 total_areas[name] = []
+
             thicknesses[name].append(weighted_median(tomo[name].thickness, tomo[name].area))
-            # thicknesses[name].append(weighted_histogram_peak(tomo[name].thickness, tomo[name].area, 100, [1.5,7.5]))
+                # thicknesses[name].append(weighted_histogram_peak(tomo[name].thickness, tomo[name].area, 100, [1.5,7.5]))
             total_thicknesses[name].extend(tomo[name].thickness)
             total_areas[name].extend(tomo[name].area)
 
@@ -370,5 +409,5 @@ thickness_sets = [thicknesses[i] for i in conditions]
 thicknesses_all = [total_thicknesses[name] for name in conditions]
 areas_all = [total_areas[name] for name in conditions]
 
-histogram(thicknesses_all, areas_all, conditions, "Thickness (nm)", filename="thick_hist.svg", bins=100, range=[1.5, 7.5], xlabel="Thickness (nm)", vlines=False)
+histogram(thicknesses_all, areas_all, conditions, "Thickness (nm)", filename="thick_hist_smoothrough.svg", bins=100, range=[1.5, 7.5], xlabel="Thickness (nm)", vlines=False)
 statistics(thickness_sets, "Thickness", conditions, morphologies, test_type="medians", filename="thickness_violin_ERsub.csv", ylabel="Distance (nm)")
