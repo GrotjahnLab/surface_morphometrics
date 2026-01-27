@@ -77,14 +77,16 @@ for file in segmentation_files:
         #Generate the membrane mesh ply file from the xyz file
         ply_file =   f"{config['work_dir']}{basename}_{key}.ply" 
         print(f"Generating a ply mesh with Screened Poisson: {ply_file}")
-        ret_val = xyz2ply.xyz_to_ply(xyz_file, ply_file, 
-                                        pointweight=config["surface_generation"]["point_weight"], 
-                                        simplify=config["surface_generation"]["simplify"], 
-                                        num_faces=config["surface_generation"]["max_triangles"], 
-                                        k_neighbors=config["surface_generation"]["neighbor_count"], 
-                                        deldist=config["surface_generation"]["extrapolation_distance"], 
+        ret_val = xyz2ply.xyz_to_ply(xyz_file, ply_file,
+                                        pointweight=config["surface_generation"]["point_weight"],
+                                        simplify=config["surface_generation"]["simplify"],
+                                        num_faces=config["surface_generation"]["max_triangles"],
+                                        k_neighbors=config["surface_generation"]["neighbor_count"],
+                                        deldist=config["surface_generation"]["extrapolation_distance"],
                                         smooth_iter=config["surface_generation"]["smoothing_iterations"],
-                                        depth=config["surface_generation"]["octree_depth"])
+                                        depth=config["surface_generation"]["octree_depth"],
+                                        isotropic_remesh=config["surface_generation"].get("isotropic_remesh", True),
+                                        target_area=config["surface_generation"].get("target_area", 1.0))
         if ret_val != 0:
             print("Error converting xyz file to ply")
             continue

@@ -10,6 +10,7 @@ __license__ = "GPLv3"
 from sys import argv
 import importlib_metadata as metadata
 import glob
+import math
 import pymeshlab as pm
 import click
 
@@ -23,33 +24,35 @@ if PML_VER == '2022.2.post3':
 @click.argument('plyfile', type=str)
 @click.option('--pointweight', type=float, default=1)
 @click.option('--simplify', type=bool, default=False)
-@click.option('--ultrafine', type=bool, default=True)
+@click.option('--ultrafine', type=bool, default=False)
 @click.option('--num_faces', type=int, default=300000)
 @click.option('--k_neighbors', type=int, default=40)
 @click.option('--deldist', type=int, default=1)
 @click.option('--smooth_iter', type=int, default=1)
 @click.option('--depth', type=int, default=9)
-def xyz_to_ply_from_CLI(xyzfile, plyfile, pointweight, ultrafine, simplify, num_faces, k_neighbors, deldist, smooth_iter, depth):
+@click.option('--isotropic_remesh', type=bool, default=True)
+@click.option('--target_area', type=float, default=1.0)
+def xyz_to_ply_from_CLI(xyzfile, plyfile, pointweight, ultrafine, simplify, num_faces, k_neighbors, deldist, smooth_iter, depth, isotropic_remesh, target_area):
     """Click wrapper for xyz_to_ply"""
-    xyz_to_ply(xyzfile, plyfile, pointweight=pointweight, simplify=simplify, num_faces=num_faces, k_neighbors=k_neighbors, deldist=deldist, smooth_iter=smooth_iter, depth=depth)
+    xyz_to_ply(xyzfile, plyfile, pointweight=pointweight, simplify=simplify, num_faces=num_faces, k_neighbors=k_neighbors, deldist=deldist, smooth_iter=smooth_iter, depth=depth, isotropic_remesh=isotropic_remesh, target_area=target_area)
 
 
-def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=150000, k_neighbors=500, deldist=1.5, smooth_iter=1, depth=9, ultrafine=True, remesh_sampling=0.2):
+def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=150000, k_neighbors=500, deldist=1.5, smooth_iter=1, depth=9, ultrafine=False, isotropic_remesh=True, target_area=1.0):
     """Convert an xyz file to a ply file using pymeshlab
 
     Arguments:
     xyzfile {str} -- Input xyz filename
     plyfile {str} -- Output ply filename
-    ultrafine {bool} -- If True, will use a new routine to generate finer, higher quality meshes. Default True.
-    simplify {bool} -- If True, will simplify the mesh to a set number of faces. Default False. Leave False for ultrafine meshes.
+    ultrafine {bool} -- If True, uses an additional subdivision and resampling routine before cropping. Not necessary under normal conditions but may help with unusually challenging membranes. Default False.
+    simplify {bool} -- If True, will simplify the mesh to a set number of faces. Default False.
     num_faces {int} -- Maximal number of allowed faces after decimation. Default 150000, use more for finer sampling but with greater computational cost.
     depth {int} -- Depth of screened poisson octree. Higher numbers mean more complex meshes but can incorporate stepping artifacts. Default 9.
     pointweight {float} -- Screening weight (0 for max smoothness, 1 to 4 for beter fit to points). Default 0.7.
     k_neighbors {int} -- Number of neighbors for point cloud normal estimation - default 500
     deldist {int} -- Max distance to extrapolate. Default 1.5; distances are in the point cloud distance unit (default nm).
     smooth_iter {int} -- Number of smoothing iterations. Default 1.
-    simplify {bool} -- If True, will simplify the mesh to a set number of faces. Default True.
-    remesh_sampling {float} -- The percentage of the total size of the mesh to do uniform resampling on. Lower values mean more triangles. Default 0.2.
+    isotropic_remesh {bool} -- If True, will apply isotropic remeshing to create near-equilateral triangles with target average area. Default True.
+    target_area {float} -- Target average triangle area in square units (e.g., nm^2). Default 1.0.
     """
     print(f"Processing {xyzfile} into {plyfile}")
     ms = pm.MeshSet()
@@ -60,12 +63,19 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=1500
         ms.meshing_surface_subdivision_loop(iterations=18)
         ms.generate_resampled_uniform_mesh(cellsize=pm.PercentageValue(0.05))
         ms.meshing_surface_subdivision_loop(iterations=6)
-        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=2, refmesh=0, maxdist = pm.PercentageValue(remesh_sampling), signeddist=False)
+        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=2, refmesh=0, maxdist=pm.PercentageValue(0.2), signeddist=False)
     else:
-        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh = 1, refmesh=0 , maxdist=pm.PercentageValue(remesh_sampling), signeddist=False) # Delete points that are too far from the reference mesh
+        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=1, refmesh=0, maxdist=pm.PercentageValue(0.2), signeddist=False) # Delete points that are too far from the reference mesh
     ms.compute_selection_by_condition_per_vertex(condselect = f'(q>{deldist})') # Select only the best quality vertices
     ms.compute_selection_by_condition_per_face(condselect = f'(q0>{deldist} || q1>{deldist} || q2>{deldist})') # Select only the best quality vertices
     ms.meshing_remove_selected_vertices_and_faces()
+    if isotropic_remesh:
+        # Calculate target edge length from target area for equilateral triangles
+        # Area of equilateral triangle = (sqrt(3)/4) * edge^2
+        # So edge = sqrt(4 * area / sqrt(3))
+        target_edge_length = math.sqrt(4.0 * target_area / math.sqrt(3.0))
+        print(f"Applying isotropic remeshing with target edge length {target_edge_length:.4f} (target area {target_area})")
+        ms.meshing_isotropic_explicit_remeshing(targetlen=target_edge_length, iterations=3)
     if simplify:
         ms.meshing_decimation_quadric_edge_collapse(targetfacenum=num_faces, qualitythr=0.6, preserveboundary=True, preservenormal=True, optimalplacement=True, planarquadric=True) # Simplify
     ms.save_current_mesh(plyfile)

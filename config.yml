@@ -1,24 +1,22 @@
 # UNIVERSAL
-data_dir: "/Users/bbarad/morphometrics/neal_seg/"
-work_dir: "/Users/bbarad/morphometrics/neal_work/"
+data_dir: "./example_data/"
+work_dir: "./morphometrics/"
 exp_name: "test" # Subdirectory of work folder for this experiment
 segmentation_values: # The value used to represent each feature, and the name of the feature.
   OMM: 1
   IMM: 2
   ER: 3
-  Vesicle: 4
-  PM: 5
-  MT: 6
-cores: 14 # Number of cores to use for parallel processing.
+cores: 6 # Number of cores to use for parallel processing.
 
 #SEGMENTATION TO MESH 
 surface_generation:
   angstroms: false # Default scaling adjusts so surfaces are nm-scaled, if set to true surfaces are not rescaled and remain angstrom-scaled.
-  ultrafine: false # If true, the surface is generated with a new high quality protocol. This makes calculation much slower but the surface is much better for sampling density.
-  mesh_sampling: 1 # Approximate mesh sampling rate, for ultrafine mode
-  simplify: true # Non-simplified surfaces can be VERY slow, but are better for sampling the coulomb potential.
-  max_triangles: 300000 # If simplifying and more than this number of triangles are generated, the surface is decimated to this number
+  ultrafine: false # Not necessary under normal conditions but may help with unusually challenging membranes. Uses additional subdivision and resampling before cropping.
   extrapolation_distance: 1.5 # Distance in nm (or angstroms, if angstrom setting is True) to extrapolate the surface
+  isotropic_remesh: true # If true, applies isotropic remeshing to create near-equilateral triangles with target average area.
+  target_area: 1.0 # Target average triangle area in square units (nm^2 by default). Used when isotropic_remesh is true.
+  simplify: false # If true, decimates the mesh to max_triangles. Note: simplified surfaces will not be isotropic.
+  max_triangles: 300000 # Only used if simplify is true. When using isotropic_remesh, target_area controls triangle count instead.
   octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
   point_weight: 0.7 # Larger numbers have stronger weight towards fitting segmented points, smaller numbers have stronger weight towards generating a smooth surface
   neighbor_count: 400 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...
@@ -39,26 +37,12 @@ distance_and_orientation_measurements:
     - OMM
     - IMM
     - ER
-    - Vesicle
-    - PM
-    - MT
   relative_orientation: true # Measure relative orientation (angle relative to nearest neighbor surface).
   inter: # Intersurface distance/orientation measurements. Writes out symmetrically so you do not need to give symmetric options.
     OMM:
       - IMM
       - ER
-      - PM
-      - Vesicle
-      - MT
-    ER:
-      - PM
-      - MT
-      - Vesicle
-    PM:
-      - Vesicle
-      - MT
-    Veiscle:
-      - PM
+ 
 # thickness_measurements:
 #   sampling: 1.0
 #   fit_curve: True 
