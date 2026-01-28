@@ -1,4 +1,6 @@
 ## Load a thickness csv file and make a bunch of plots of the samples, and fit a gaussian to estimate FWHM
+# Pipeline Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.
+# Thickness Citation: Medina M, Chang Y-T, Rahmani H, Frank M, Khan Z, Fuentes D, Heberle FA, Waxham MN, Barad BA, Grotjahn DA. Surface Morphometrics reveals local membrane thickness variation in organellar subcompartments. J Cell Biol 2025.
 
 import pandas as pd
 import numpy as np

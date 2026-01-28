@@ -123,7 +123,7 @@ for file in segmentation_files:
 
 print("---------")
 print("Done with distance and orientation measurements. Check out the output vtp and csv files and then start getting to work doing stats!")
-print("Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. A surface morphometrics toolkit to quantify organellar membrane ultrastructure using cryo-electron tomography. Biorxiv 2022.")
+print("Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.")
 
 
 

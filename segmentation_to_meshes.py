@@ -117,4 +117,4 @@ for file in segmentation_files:
 print("-------------------------------------------------------")
 print("Conversions complete. It is highly recommended to check the intermediate files for correctness before proceeding. All files are in the work directory.")
 print("If you are happy with the results, you can move on to `run_pycurv.py`.")
-print("Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. A surface morphometrics toolkit to quantify organellar membrane ultrastructure using cryo-electron tomography. Biorxiv 2022.")
+print("Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.")

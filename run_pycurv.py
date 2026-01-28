@@ -2,7 +2,7 @@
 """Step two of the pipeline for surface morphometrics
 Take a VTP style mesh generatead through the screen and perform curvature analysis using AVV.
 
-Citation: Barad BA, Medina M et al. A surface morphometrics toolkit to quantify organellar membrane ultrastructure using cryo-electron tomography. Biorxiv 2022.
+Citation: Barad BA, Medina M et al. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.
 Pycurv Citation: Salfer M et al. Reliable estimation of membrane curvature for cryo-electron tomography. PLOS Computational Biology 2020.
 
 Two usage options:
@@ -75,7 +75,7 @@ print("-------------------------------------------------------")
 print("Pycurv complete. It is highly recommended to check the AVV vtp file with paraview to confirm good results.")
 print("If you are happy with the results, you can move on to `distances_and_orientations.py`.")
 print("Pycurv Citation: Salfer M, Collado JF, Baumeister W, Fernández-Busnadiego R, Martínez-Sánchez A. Reliable estimation of membrane curvature for cryo-electron tomography. PLOS Comp Biol 2020.")
-print("Pipeline Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. A surface morphometrics toolkit to quantify organellar membrane ultrastructure using cryo-electron tomography. Biorxiv 2022.")
+print("Pipeline Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.")
 
 
     
