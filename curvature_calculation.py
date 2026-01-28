@@ -139,7 +139,7 @@ def new_workflow(
         methods=['VV'], page_curvature_formula=False, area2=True,
         label=1, filled_label=None, unfilled_mask=None, holes=0,
         remove_wrong_borders=True, min_component=100, only_normals=False,
-        cores=6, runtimes=''):
+        cores=6, runtimes='', suppress_vtk_warnings=True):
     """
     A script for running all processing steps to estimate membrane curvature.
 
@@ -192,6 +192,8 @@ def new_workflow(
         cores (int, optional): number of cores to run VV in parallel (default 6)
         runtimes (str, optional): if given, runtimes and some parameters are
             added to this file (default '')
+        suppress_vtk_warnings (boolean, optional): if True (default), VTK
+            warnings from curvature calculation are suppressed
 
     Returns:
         None
@@ -199,6 +201,10 @@ def new_workflow(
     log_file = '{}{}.{}_rh{}.log'.format(
                 fold, base_filename, methods[0], radius_hit)
     sys.stdout = open(log_file, 'w')
+
+    if suppress_vtk_warnings:
+        print("VTK curvature warnings are suppressed. Set "
+              "suppress_vtk_warnings=False to see them.", file=sys.stderr)
 
     t_begin = time.time()
 
@@ -216,6 +222,7 @@ def new_workflow(
         if filled_label is not None:  # if lumen segmentation given:
             # Surface generation with compartment segmentation using Marching
             # Cubes algorithm and applying the mask of membrane segmentation.
+            print("Generating surface (Marching Cubes)...", file=sys.stderr)
             print("\nMaking membrane and compartment binary segmentations...")
             binary_seg = (seg == label).astype(data_type)
             if not np.any(binary_seg):
@@ -239,7 +246,8 @@ def new_workflow(
 
         else:  # Surface generation with Hoppe's algorithm and applying the mask
             # of membrane segmentation.
-            print("Making the segmentation binary...")
+            print("Generating surface (Hoppe)...", file=sys.stderr)
+            print("\nMaking the segmentation binary...")
             binary_seg = (seg == label).astype(data_type)
             if not np.any(binary_seg):
                 raise pexceptions.PySegInputError(
@@ -254,21 +262,25 @@ def new_workflow(
             # Write the resulting binary segmentation into a file:
             binary_seg_file = "{}{}.binary_seg.mrc".format(
                 fold, base_filename)
-            # io.save_numpy(binary_seg, binary_seg_file)
+            io.save_numpy(binary_seg, binary_seg_file)
             print("\nGenerating a surface from the binary segmentation...")
             surf = run_gen_surface(binary_seg, fold + base_filename, lbl=1,
                                    other_mask=unfilled_mask)
     else:
+        print('Reading in existing surface...', file=sys.stderr)
         print('\nReading in the surface from file...')
         surf = io.load_poly(fold + surf_file)
 
     clean_graph_file = '{}.scaled_cleaned.gt'.format(base_filename)
     clean_surf_file = '{}.scaled_cleaned.vtp'.format(base_filename)
     if not isfile(fold + clean_graph_file) or not isfile(fold + clean_surf_file):
+        print('Building triangle graph and computing VTK curvatures...',
+              file=sys.stderr)
         print('\nBuilding a triangle graph from the surface...')
         tg = TriangleGraph()
         scale = (pixel_size, pixel_size, pixel_size)
-        tg.build_graph_from_vtk_surface(surf, scale)
+        tg.build_graph_from_vtk_surface(
+            surf, scale, suppress_vtk_warnings=suppress_vtk_warnings)
         if tg.graph.num_vertices() == 0:
             raise pexceptions.PySegInputError(
                 expr="new_workflow", msg="The graph is empty!")
@@ -277,6 +289,7 @@ def new_workflow(
 
         # Remove the wrong borders (surface generation artefact)
         if remove_wrong_borders:
+            print('Removing wrong surface borders...', file=sys.stderr)
             b = MAX_DIST_SURF  # "padding" from masking in surface generation
             print('\nFinding triangles that are {} pixels to surface borders...'
                   .format(b))
@@ -286,6 +299,7 @@ def new_workflow(
 
         # Filter out possibly occurring small disconnected fragments
         if min_component > 0:
+            print('Filtering small disconnected components...', file=sys.stderr)
             print('\nFinding small connected components of the graph...')
             tg.find_small_connected_components(
                 threshold=min_component, purge=True, verbose=True)
@@ -293,10 +307,13 @@ def new_workflow(
                 tg.graph.num_vertices(), tg.graph.num_edges()))
 
         # Saving the scaled (and cleaned) graph and surface:
+        print('Saving cleaned graph and surface...', file=sys.stderr)
         tg.graph.save(fold + clean_graph_file)
         surf_clean = tg.graph_to_triangle_poly()
         io.save_vtp(surf_clean, fold + clean_surf_file)
     else:
+        print('Reading in existing cleaned graph and surface...',
+              file=sys.stderr)
         print('\nReading in the cleaned graph and surface from files...')
         surf_clean = io.load_poly(fold + clean_surf_file)
         tg = TriangleGraph()
@@ -309,6 +326,8 @@ def new_workflow(
           .format(minutes, seconds))
 
     # Running the modified Normal Vector Voting algorithms:
+    print('Running Normal Vector Voting (methods: {})...'.format(
+        ', '.join(methods)), file=sys.stderr)
     gt_file1 = '{}{}.NVV_rh{}.gt'.format(fold, base_filename, radius_hit)
     method_tg_surf_dict = {}
     if not isfile(gt_file1):
@@ -334,6 +353,7 @@ def new_workflow(
 
     if only_normals is False:  # Saving the output (graph and surface objects)
         # for later filtering or inspection in ParaView:
+        print('Saving output files...', file=sys.stderr)
         for method in list(method_tg_surf_dict.keys()):
             (tg, surf) = method_tg_surf_dict[method]
             if method == 'VV':
@@ -598,7 +618,7 @@ def from_ply_workflow(
     Estimates curvature for each triangle in a triangle mesh in PLY format.
 
     Args:
-        mask_file (str): MRC file for
+        ply_file (str): PLY file with the surface
         radius_hit (float): radius in length unit of the graph, e.g. nanometers;
             it should be chosen to correspond to radius of smallest features of
             interest on the surface
