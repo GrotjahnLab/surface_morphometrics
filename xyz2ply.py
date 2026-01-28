@@ -27,7 +27,7 @@ if PML_VER == '2022.2.post3':
 @click.option('--ultrafine', type=bool, default=False)
 @click.option('--num_faces', type=int, default=300000)
 @click.option('--k_neighbors', type=int, default=40)
-@click.option('--deldist', type=int, default=1)
+@click.option('--deldist', type=float, default=1)
 @click.option('--smooth_iter', type=int, default=1)
 @click.option('--depth', type=int, default=9)
 @click.option('--isotropic_remesh', type=bool, default=True)
@@ -58,16 +58,16 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=1500
     ms = pm.MeshSet()
     ms.load_new_mesh(xyzfile)
     ms.compute_normal_for_point_clouds(k=k_neighbors, smoothiter=smooth_iter) # Predict smooth normals
-    ms.generate_surface_reconstruction_screened_poisson(depth=depth, pointweight=pointweight, samplespernode=5.,iters=10, scale=1.2) # Screened Poisson
+    ms.generate_surface_reconstruction_screened_poisson(depth=depth, pointweight=pointweight, samplespernode=5.,iters=10, scale=1.2, threads=1) # Screened Poisson
     if ultrafine:
         ms.meshing_surface_subdivision_loop(iterations=18)
         ms.generate_resampled_uniform_mesh(cellsize=pm.PercentageValue(0.05))
         ms.meshing_surface_subdivision_loop(iterations=6)
-        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=2, refmesh=0, maxdist=pm.PercentageValue(0.2), signeddist=False)
+        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=2, refmesh=0, maxdist=pm.PureValue(2 * deldist), signeddist=False)
     else:
-        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=1, refmesh=0, maxdist=pm.PercentageValue(0.2), signeddist=False) # Delete points that are too far from the reference mesh
-    ms.compute_selection_by_condition_per_vertex(condselect = f'(q>{deldist})') # Select only the best quality vertices
-    ms.compute_selection_by_condition_per_face(condselect = f'(q0>{deldist} || q1>{deldist} || q2>{deldist})') # Select only the best quality vertices
+        ms.compute_scalar_by_distance_from_another_mesh_per_vertex(measuremesh=1, refmesh=0, maxdist=pm.PureValue(2 * deldist), signeddist=False) # Delete points that are too far from the reference mesh
+    ms.compute_selection_by_condition_per_vertex(condselect = f'(q>={deldist})') # Select vertices beyond the extrapolation distance
+    ms.compute_selection_by_condition_per_face(condselect = f'(q0>={deldist} || q1>={deldist} || q2>={deldist})') # Select faces with any vertex beyond the extrapolation distance
     ms.meshing_remove_selected_vertices_and_faces()
     if isotropic_remesh:
         # Calculate target edge length from target area for equilateral triangles
@@ -75,7 +75,7 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=1500
         # So edge = sqrt(4 * area / sqrt(3))
         target_edge_length = math.sqrt(4.0 * target_area / math.sqrt(3.0))
         print(f"Applying isotropic remeshing with target edge length {target_edge_length:.4f} (target area {target_area})")
-        ms.meshing_isotropic_explicit_remeshing(targetlen=target_edge_length, iterations=3)
+        ms.meshing_isotropic_explicit_remeshing(targetlen=pm.PureValue(target_edge_length), iterations=3)
     if simplify:
         ms.meshing_decimation_quadric_edge_collapse(targetfacenum=num_faces, qualitythr=0.6, preserveboundary=True, preservenormal=True, optimalplacement=True, planarquadric=True) # Simplify
     ms.save_current_mesh(plyfile)
@@ -84,9 +84,5 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=1500
     
 
 if __name__ == "__main__":
-    xyzfiles = sorted(glob.glob("*.xyz"))
-    for point_cloud in xyzfiles:
-        print(f"Processing {point_cloud}")
-        plyfile = f"{point_cloud[:-4]}.smooth.ply"
-        xyz_to_ply(point_cloud, plyfile)
+    xyz_to_ply_from_CLI()
 

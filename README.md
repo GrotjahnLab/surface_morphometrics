@@ -82,7 +82,7 @@ Running the full pipeline on a 4 core laptop with the tutorial datasets takes ab
 for TE1, 5 for TF1), mostly in steps 3 and 4. With cluster parallelization, the full pipeline 
 can run in 2 hours for as many tomograms as desired.
 
-1. Edit the `config.yml` file for your specific project needs.
+1. Edit the `config.yml` file for your specific project needs. **New users:** we recommend starting with `isotropic_remesh: true` and `simplify: false` in the `surface_generation` section for higher quality meshes with near-equilateral triangles. A `target_area` between 1.0 and 3.0 nm^2 generally yields good results, but smaller triangles significantly increase computation time. The default config uses `simplify: true` for faster processing.
 2. Run the surface reconstruction for all segmentations: `python segmentation_to_meshes.py config.yml`
 3. Run pycurv for each surface (recommended to run individually in parallel with a cluster): `python 
 run_pycurv.py config.yml ${i}.surface.vtp`

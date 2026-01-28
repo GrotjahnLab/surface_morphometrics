@@ -15,13 +15,14 @@ __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
 import os
+import sys
+import subprocess
 import glob
 from sys import argv
 
 import yaml
 
 import mrc2xyz
-import xyz2ply
 import ply2vtp
 
 # Check for a config file
@@ -61,6 +62,32 @@ print(seg_values)
 if not os.path.isdir(config["work_dir"]):
     os.mkdir(config["work_dir"])
 
+def run_xyz_to_ply(xyz_file, ply_file, surface_config):
+    """Run xyz2ply in a subprocess.
+
+    Running in a subprocess avoids loading pymeshlab (Qt5) in the same
+    process as vtk (Qt6).
+    """
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "xyz2ply.py")
+    sg = surface_config
+    cmd = [
+        sys.executable, script, xyz_file, ply_file,
+        "--pointweight", str(sg["point_weight"]),
+        "--simplify", str(sg["simplify"]),
+        "--num_faces", str(sg["max_triangles"]),
+        "--k_neighbors", str(sg["neighbor_count"]),
+        "--deldist", str(sg["extrapolation_distance"]),
+        "--smooth_iter", str(sg["smoothing_iterations"]),
+        "--depth", str(sg["octree_depth"]),
+        "--isotropic_remesh", str(sg.get("isotropic_remesh", True)),
+        "--target_area", str(sg.get("target_area", 1.0)),
+    ]
+    result = subprocess.run(cmd)
+    if os.path.exists(ply_file) and os.path.getsize(ply_file) > 0:
+        return 0
+    return 1
+
+
 # Run the conversion
 for file in segmentation_files:
     print(f"Processing segmentation {file}")
@@ -75,23 +102,13 @@ for file in segmentation_files:
             print("Error converting segmentation file to xyz")
             continue
         #Generate the membrane mesh ply file from the xyz file
-        ply_file =   f"{config['work_dir']}{basename}_{key}.ply" 
+        ply_file =   f"{config['work_dir']}{basename}_{key}.ply"
         print(f"Generating a ply mesh with Screened Poisson: {ply_file}")
-        ret_val = xyz2ply.xyz_to_ply(xyz_file, ply_file,
-                                        pointweight=config["surface_generation"]["point_weight"],
-                                        simplify=config["surface_generation"]["simplify"],
-                                        num_faces=config["surface_generation"]["max_triangles"],
-                                        k_neighbors=config["surface_generation"]["neighbor_count"],
-                                        deldist=config["surface_generation"]["extrapolation_distance"],
-                                        smooth_iter=config["surface_generation"]["smoothing_iterations"],
-                                        depth=config["surface_generation"]["octree_depth"],
-                                        isotropic_remesh=config["surface_generation"].get("isotropic_remesh", True),
-                                        target_area=config["surface_generation"].get("target_area", 1.0))
+        ret_val = run_xyz_to_ply(xyz_file, ply_file, config["surface_generation"])
         if ret_val != 0:
             print("Error converting xyz file to ply")
             continue
         # Convert the ply file to a vtp file
-        
         vtp_file = config["work_dir"]+basename+"_"+str(key)+".surface.vtp"
         print(f"Converting the ply file to a vtp file: {vtp_file}")
         ply2vtp.ply_to_vtp(ply_file, vtp_file)
