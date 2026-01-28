@@ -1,5 +1,5 @@
 git+https://github.com/bbarad/Pyto.git@patch-2
-git+https://github.com/hemanthkapa/pycurv.git@fix_vertexfilter
+git+https://github.com/bbarad/pycurv.git
 git+https://github.com/hemanthkapa/napari-vedo-bridge.git
 pymeshlab==2022.2.post3
 pyyaml
