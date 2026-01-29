@@ -36,7 +36,7 @@ exit # Exit the container
 1. Clone this git repository: `git clone https://github.com/grotjahnlab/surface_morphometrics.git`
 2. Install the conda environment: `conda env create -f environment.yml`
 3. Activate the conda environment: `conda activate morphometrics`
-4. Install additional dependencies: `pip install -r pip_requirements.txt`
+4. NO LONGER REQUIRED: Install additional dependencies: `pip install -r pip_requirements.txt`
 
 ## Working with Docker Container
 
