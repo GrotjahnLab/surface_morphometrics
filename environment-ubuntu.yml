@@ -1,0 +1,32 @@
+name: morphometrics
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pyqt
+  - matplotlib>=3.8
+  - pandas
+  # graph-tool 2.68 has a segfault bug with pycurv; 2.65 works
+  - graph-tool=2.65
+  - vtk
+  - pip>=20.0
+  # Scientific computing
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - numpy
+  # Data/IO
+  - pyyaml
+  - ruamel.yaml
+  - click
+  - mrcfile
+  # Visualization/notebooks
+  - jupyter
+  - napari
+  - magicgui
+  - pip:
+    # pymeshlab via pip to avoid libboost conflicts with graph-tool
+    - pymeshlab>=2023.12
+    - git+https://github.com/vladanl/Pyto.git
+    - git+https://github.com/bbarad/pycurv.git
+
