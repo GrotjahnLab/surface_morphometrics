@@ -10,7 +10,7 @@ Two usage options:
   run_pycurv.py config.yml mesh.vtp
 2. Run pycurv on all meshes in the working directory:
  segmentation_to_meshes.py config.yml
- 
+
 Because pycurv is quite resource intensive, it is recommended to use option 1 with a cluster submission script in parallel, rather than sequentially running all vtp files.
 """
 
@@ -21,10 +21,10 @@ __license__ = "GPLv3"
 from sys import argv
 import os
 import glob
+import subprocess
+import sys
 
 import yaml
-
-import curvature
 
 # Check for a config file
 if len(argv) < 2:
@@ -61,14 +61,30 @@ else:
 if not os.path.isdir(config["work_dir"]):
     os.mkdir(config["work_dir"])
 
-for surface in mesh_files:
-    print("Processing "+surface)
-    curvature.run_pycurv(surface, config["work_dir"],
-                        scale=1.0,
-                        radius_hit=config["curvature_measurements"]["radius_hit"],
-                        min_component=config["curvature_measurements"]["min_component"],
-                        exclude_borders=config["curvature_measurements"]["exclude_borders"],
-                        cores=config["cores"])
+# Get path to curvature.py (same directory as this script)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+curvature_script = os.path.join(script_dir, "curvature.py")
+
+for i, surface in enumerate(mesh_files):
+    print("Processing {} ({}/{})".format(surface, i+1, len(mesh_files)))
+
+    # Run each file in a subprocess to ensure complete isolation
+    # This prevents multiprocessing/OpenMP state from leaking between files
+    cmd = [
+        sys.executable, curvature_script,
+        surface, config["work_dir"],
+        "--radius_hit", str(config["curvature_measurements"]["radius_hit"]),
+        "--min_component", str(config["curvature_measurements"]["min_component"]),
+        "--exclude_borders", str(config["curvature_measurements"]["exclude_borders"]),
+        "--cores", str(config["cores"])
+    ]
+
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        print("ERROR: Processing failed for {}".format(surface))
+        continue
+
+    print("Completed {}\n".format(surface))
 
     
 print("-------------------------------------------------------")
