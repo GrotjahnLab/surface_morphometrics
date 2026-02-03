@@ -18,13 +18,17 @@ __author__ = "Benjamin Barad"
 __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
-from sys import argv
+# Set OMP_NUM_THREADS=1 before any imports to prevent OpenMP + fork deadlocks
+# when graph-tool is used with multiprocessing
 import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
+from sys import argv
 import glob
-import subprocess
-import sys
 
 import yaml
+
+import curvature
 
 # Check for a config file
 if len(argv) < 2:
@@ -61,30 +65,14 @@ else:
 if not os.path.isdir(config["work_dir"]):
     os.mkdir(config["work_dir"])
 
-# Get path to curvature.py (same directory as this script)
-script_dir = os.path.dirname(os.path.abspath(__file__))
-curvature_script = os.path.join(script_dir, "curvature.py")
-
 for i, surface in enumerate(mesh_files):
     print("Processing {} ({}/{})".format(surface, i+1, len(mesh_files)))
-
-    # Run each file in a subprocess to ensure complete isolation
-    # This prevents multiprocessing/OpenMP state from leaking between files
-    cmd = [
-        sys.executable, "-u", curvature_script,
-        surface, config["work_dir"],
-        "--radius_hit", str(config["curvature_measurements"]["radius_hit"]),
-        "--min_component", str(config["curvature_measurements"]["min_component"]),
-        "--exclude_borders", str(config["curvature_measurements"]["exclude_borders"]),
-        "--cores", str(config["cores"])
-    ]
-
-    print("Running: {}".format(" ".join(cmd)), flush=True)
-    result = subprocess.run(cmd, stdin=subprocess.DEVNULL)
-    if result.returncode != 0:
-        print("ERROR: Processing failed for {}".format(surface))
-        continue
-
+    curvature.run_pycurv(surface, config["work_dir"],
+                        scale=1.0,
+                        radius_hit=config["curvature_measurements"]["radius_hit"],
+                        min_component=config["curvature_measurements"]["min_component"],
+                        exclude_borders=config["curvature_measurements"]["exclude_borders"],
+                        cores=config["cores"])
     print("Completed {}\n".format(surface))
 
     
