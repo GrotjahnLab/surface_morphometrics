@@ -71,7 +71,7 @@ for i, surface in enumerate(mesh_files):
     # Run each file in a subprocess to ensure complete isolation
     # This prevents multiprocessing/OpenMP state from leaking between files
     cmd = [
-        sys.executable, curvature_script,
+        sys.executable, "-u", curvature_script,
         surface, config["work_dir"],
         "--radius_hit", str(config["curvature_measurements"]["radius_hit"]),
         "--min_component", str(config["curvature_measurements"]["min_component"]),
@@ -79,7 +79,8 @@ for i, surface in enumerate(mesh_files):
         "--cores", str(config["cores"])
     ]
 
-    result = subprocess.run(cmd)
+    print("Running: {}".format(" ".join(cmd)), flush=True)
+    result = subprocess.run(cmd, stdin=subprocess.DEVNULL)
     if result.returncode != 0:
         print("ERROR: Processing failed for {}".format(surface))
         continue
