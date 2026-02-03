@@ -1,12 +1,13 @@
 # UNIVERSAL
-data_dir: "./example_data/"
-work_dir: "./morphometrics/"
+data_dir: "./example_data/"  # Directory containing segmentation MRC files
+tomo_dir: "./tomograms/"  # Directory containing tomogram MRC files (for thickness measurements)
+work_dir: "./morphometrics/"  # Working directory for output files
 exp_name: "test" # Subdirectory of work folder for this experiment
 segmentation_values: # The value used to represent each feature, and the name of the feature.
   OMM: 1
   IMM: 2
   ER: 3
-cores: 6 # Number of cores to use for parallel processing.
+cores: 8 # Number of cores to use for parallel processing.
 
 #SEGMENTATION TO MESH 
 surface_generation:
@@ -42,17 +43,19 @@ distance_and_orientation_measurements:
       - IMM
       - ER
  
-# thickness_measurements:
-#   sampling: 1.0
-#   fit_curve: True 
-#   flip_y: false
-#   leaflets: true
-#   components:
-#     - Spherule
-#     - ER
-#     - NE
-#     - OMM
-#     - IMM
+# DENSITY SAMPLING (used by sample_density.py)
+density_sampling:
+  sample_spacing: 0.25  # Distance in nm between samples along normal vectors. Should divide evenly into scan_range.
+  scan_range: 10  # Half-range in nm to scan along normal vectors (scans from -scan_range to +scan_range)
+
+# THICKNESS MEASUREMENTS (used by measure_thickness.py)
+thickness_measurements:
+  average_radius: 12  # Radius in nm for local averaging in thickness calculations
+  fit_curve: true  # Fit dual gaussian to estimate thickness
+  components:  # Components to process for thickness measurements
+    - OMM
+    - IMM
+    - ER
 
 
 
