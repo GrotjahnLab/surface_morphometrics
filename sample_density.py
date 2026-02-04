@@ -151,6 +151,51 @@ def interpolate(data, data_matrix, xyz, n_v, sample_spacing=0.25, angstroms=Fals
     return value_array
 
 
+def sample_density_single(mrc_file, graph_file, sample_spacing=0.25, scan_range=10, angstroms=False):
+    """
+    Sample density values for a single graph file.
+
+    This is a reusable function that can be called by other scripts.
+
+    Parameters
+    ----------
+    mrc_file : str
+        Path to the tomogram MRC file
+    graph_file : str
+        Path to the graph-tool .gt file
+    sample_spacing : float
+        Distance in nm between samples (default: 0.25)
+    scan_range : float
+        Half-range in nm to scan along normal vectors (default: 10)
+    angstroms : bool
+        If True, use angstrom units (default: False)
+
+    Returns
+    -------
+    tuple
+        (value_array, x_positions, voxsize) where value_array is (n_triangles x nsamples),
+        x_positions is the array of sample positions, and voxsize is the voxel size
+    """
+    # Load MRC data
+    data, data_matrix, voxsize, origin = load_mrc(mrc_file, angstroms=angstroms)
+
+    # Load graph data
+    xyz, n_v, graph = load_graph_data(graph_file, voxsize)
+
+    # Sample density along normals
+    value_array = interpolate(data, data_matrix, xyz, n_v,
+                              sample_spacing=sample_spacing, angstroms=angstroms,
+                              scan_range=scan_range)
+
+    # Generate x positions
+    nsamples = int(2 * scan_range / sample_spacing) + 1
+    x_positions = np.linspace(-scan_range, scan_range, nsamples)
+    if angstroms:
+        x_positions = x_positions * 10.
+
+    return value_array, x_positions, voxsize
+
+
 def sample_density_for_tomogram(filename, work_dir, angstroms=False, sample_spacing=0.25, scan_range=10, radius_hit=None):
     """
     Sample density values from a tomogram along surface normal vectors.
@@ -185,28 +230,15 @@ def sample_density_for_tomogram(filename, work_dir, angstroms=False, sample_spac
 
     print(f"Found {len(files)} files to process")
 
-    # Load the mrc data
-    data, data_matrix, voxsize, origin = load_mrc(filename, angstroms=angstroms)
-    print(f"MRC shape: {data.shape}, voxel size: {voxsize}")
-
-    # Calculate number of samples from spacing and range
-    nsamples = int(2 * scan_range / sample_spacing) + 1
-
-    # Generate header with relative positions
-    positions = np.linspace(-scan_range, scan_range, nsamples)
-    if angstroms:
-        positions = positions * 10.
-    header = ",".join([f"{p:.4f}" for p in positions])
-
     # Process each graph file
     for file in files:
         print(f"Processing {file}")
-        xyz, n_v, graph = load_graph_data(file, voxsize)
-        # Interpolate the mrc data along the normal vectors
-        value_array = interpolate(data, data_matrix, xyz, n_v,
-                                  sample_spacing=sample_spacing, angstroms=angstroms,
-                                  scan_range=scan_range)
+        value_array, positions, voxsize = sample_density_single(
+            filename, file,
+            sample_spacing=sample_spacing, scan_range=scan_range, angstroms=angstroms
+        )
         # Save the interpolated values to a csv file (same basename as .gt file)
+        header = ",".join([f"{p:.4f}" for p in positions])
         output_file = file[:-3] + "_sampling.csv"
         print(f"Saving to {output_file}")
         np.savetxt(output_file, value_array, delimiter=",", header=header, comments="")

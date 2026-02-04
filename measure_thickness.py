@@ -24,15 +24,12 @@ from scipy import spatial
 from glob import glob
 from pathlib import Path
 import os
-from sys import argv
 import yaml
 import click
+import multiprocessing as mp
 
-from pycurv import TriangleGraph, io
-from graph_tool import load_graph
 from tqdm import tqdm
 from morphometrics_stats import histogram
-from intradistance_verticality import export_csv
 
 def find_mins(y):
     """Find the indices of minimum values on left and right halves of the curve."""
@@ -104,6 +101,9 @@ def find_two_peaks(x,y):
     return width, peak1, peak2
 
 
+from _thickness_worker import init_worker, fit_triangle_chunk
+
+
 def process_single_surface(filename, average_radius, output_dir):
     """
     Process a single thickness sampling file and generate plots and refined surfaces.
@@ -122,6 +122,11 @@ def process_single_surface(filename, average_radius, output_dir):
     tuple
         (component_info_dict, per_surface_thickness, areas, width, x, fig2, ax2)
     """
+    # Lazy imports to avoid loading in worker processes
+    from pycurv import TriangleGraph, io as pycurv_io
+    from graph_tool import load_graph
+    from intradistance_verticality import export_csv
+
     tsname = Path(filename).stem.split(".")[0]
     comp_num = Path(filename).stem.split("_")[-5].split(".")[0]
     print(f"Processing {tsname}")
@@ -140,9 +145,9 @@ def process_single_surface(filename, average_radius, output_dir):
     print(tg.graph.vp.points[0], tg.graph.vp.xyz[0])
 
     areas = tg.graph.vp.area.get_array()
-    xx, yy, zz = tg.graph.vp.xyz.get_2d_array([0, 1, 2])
-    nvx, nvy, nvz = tg.graph.vp.n_v.get_2d_array([0, 1, 2])
-    xyz = tg.graph.vp.xyz.get_2d_array([0, 1, 2]).transpose()
+    xyz_2d = tg.graph.vp.xyz.get_2d_array([0, 1, 2])
+    xx, yy, zz = xyz_2d
+    xyz = xyz_2d.T
     xyztree = spatial.cKDTree(xyz)
 
     avg_x = np.average(xx, weights=areas)
@@ -151,44 +156,58 @@ def process_single_surface(filename, average_radius, output_dir):
     total_area = np.sum(areas)
 
     curvedness = tg.graph.vp.curvedness_VV.get_array()
-    rad_curv = [1/i for i in curvedness]
+    rad_curv = 1.0 / curvedness  # Vectorized
     rad_avg = np.average(rad_curv, weights=areas)
     rad_std = np.sqrt(np.cov(rad_curv, aweights=areas))
 
     surface_file = filename[:-13] + "_refined.vtp"
-    per_surface_thickness = []
-    per_triangle_offset = []
 
     fig2, ax2 = plt.subplots()
 
-    # Per-triangle thickness calculation
-    for i in tqdm(range(len(rad_curv))):
-        l, neighbors = xyztree.query(xyz[i], k=500, distance_upper_bound=average_radius, workers=-1)
-        neighbors = neighbors[np.where(l != np.inf)]
-        l = l[np.where(l != np.inf)]
-        weights = [1/(1+j) for j in l]
-        dat = np.asarray(np.average(thickness_set.iloc[neighbors], weights=weights, axis=0)) * -1
-        dat = dat - min(dat)
-        dat = dat / (80/81 * sum(dat))
+    # Pre-convert DataFrame to NumPy for faster access
+    thickness_arr = thickness_set.to_numpy()
+    n_triangles = len(rad_curv)
 
-        ipk = x[np.argmax(dat)]
-        p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-        bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
-                  [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
-        mins = find_mins(dat)
+    # Batch KDTree query - query all points at once (much faster than per-point)
+    print(f"  Running batch KDTree query for {n_triangles} triangles...")
+    distances, neighbor_indices = xyztree.query(xyz, k=500, distance_upper_bound=average_radius, workers=-1)
 
-        a = x[mins[0]+2:mins[1]-2]
-        b = dat[mins[0]+2:mins[1]-2]
+    # Per-triangle thickness calculation using multiprocessing
+    print(f"  Fitting dual gaussians using multiprocessing...")
+    n_workers = mp.cpu_count()
 
-        try:
-            p3, _ = opt.curve_fit(dual_gaussian, a, b, p0, bounds=bounds)
-            if i % 5000 == 0:
+    # Create chunks of indices for each worker
+    chunk_size = max(100, n_triangles // (n_workers * 4))
+    chunks = [list(range(i, min(i + chunk_size, n_triangles)))
+              for i in range(0, n_triangles, chunk_size)]
+
+    # Use initializer to share data once per worker (avoids repeated pickling)
+    with mp.Pool(n_workers, initializer=init_worker,
+                 initargs=(thickness_arr, distances, neighbor_indices, x)) as pool:
+        chunk_results = list(tqdm(
+            pool.imap(fit_triangle_chunk, chunks),
+            total=len(chunks),
+            desc="  Fitting triangles"
+        ))
+
+    # Flatten results from chunks
+    results = [r for chunk in chunk_results for r in chunk]
+    per_surface_thickness = [r[0] for r in results]
+    per_triangle_offset = [r[1] for r in results]
+
+    # Plot a sample of profiles for visualization
+    for i in range(0, n_triangles, 5000):
+        valid_mask = distances[i] != np.inf
+        l = distances[i][valid_mask]
+        neighbors = neighbor_indices[i][valid_mask]
+        if len(neighbors) > 0:
+            weights = 1.0 / (1.0 + l)
+            dat = np.average(thickness_arr[neighbors], weights=weights, axis=0) * -1
+            dat = dat - dat.min()
+            dat_sum = dat.sum()
+            if dat_sum > 0:
+                dat = dat / (80/81 * dat_sum)
                 ax2.plot(x, dat)
-            per_surface_thickness.append(np.abs(p3[4]-p3[1]))
-            per_triangle_offset.append((p3[4]+p3[1])/2)
-        except Exception:
-            per_surface_thickness.append(np.nan)
-            per_triangle_offset.append(0)
 
     # Average thickness calculation
     avg = thickness_set.mean(axis=0) * -1
@@ -221,7 +240,7 @@ def process_single_surface(filename, average_radius, output_dir):
     tg.graph.save(graph_file_final)
 
     surf = tg.graph_to_triangle_poly()
-    io.save_vtp(surf, surface_file)
+    pycurv_io.save_vtp(surf, surface_file)
     export_csv(tg, csv_outfile)
 
     del tg
@@ -293,8 +312,8 @@ def run_measure_thickness(config, output_dir=None):
 
     # x positions are now read from CSV headers in process_single_surface
 
-    thickness_measurements = []
-    area_measurements = []
+    thickness_measurements = {component: [] for component in components}
+    area_measurements = {component: [] for component in components}
     widths = {component: [] for component in components}
 
     # Ensure output directory exists
@@ -314,8 +333,8 @@ def run_measure_thickness(config, output_dir=None):
                 info, per_surface_thickness, norm_areas, width, x, fig2, ax2 = \
                     process_single_surface(filename, average_radius, output_dir)
 
-                thickness_measurements.append(per_surface_thickness)
-                area_measurements.append(norm_areas)
+                thickness_measurements[component].extend(per_surface_thickness)
+                area_measurements[component].extend(norm_areas)
                 widths[component].append(width)
 
                 # Write component info
@@ -385,9 +404,12 @@ def run_measure_thickness(config, output_dir=None):
                     violin.write(f"{component},{vstring}\n")
 
     # Generate histogram
-    if thickness_measurements and area_measurements:
-        histogram(data=thickness_measurements, areas=area_measurements,
-                  labels=components, title="Thickness Comparison", xlabel="Thickness (nm)")
+    thickness_data = [thickness_measurements[c] for c in components if thickness_measurements[c]]
+    area_data = [area_measurements[c] for c in components if area_measurements[c]]
+    labels_with_data = [c for c in components if thickness_measurements[c]]
+    if thickness_data and area_data:
+        histogram(data=thickness_data, areas=area_data,
+                  labels=labels_with_data, title="Thickness Comparison", xlabel="Thickness (nm)")
 
     print(f"\nOutput files written to {output_dir}")
 

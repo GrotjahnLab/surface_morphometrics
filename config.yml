@@ -1,13 +1,13 @@
 # UNIVERSAL
-data_dir: "./example_data/"  # Directory containing segmentation MRC files
-tomo_dir: "./tomograms/"  # Directory containing tomogram MRC files (for thickness measurements)
-work_dir: "./morphometrics/"  # Working directory for output files
+data_dir: "./thickness_examples/segmentations/"  # Directory containing segmentation MRC files
+tomo_dir: "./thickness_examples/tomograms/"  # Directory containing tomogram MRC files (for thickness measurements)
+work_dir: "./thickness_examples/morphometrics/"  # Working directory for output files
 exp_name: "test" # Subdirectory of work folder for this experiment
 segmentation_values: # The value used to represent each feature, and the name of the feature.
   OMM: 1
   IMM: 2
   ER: 3
-cores: 8 # Number of cores to use for parallel processing.
+cores: 6 # Number of cores to use for parallel processing.
 
 #SEGMENTATION TO MESH 
 surface_generation:
@@ -56,6 +56,15 @@ thickness_measurements:
     - OMM
     - IMM
     - ER
+
+# MESH REFINEMENT (used by refine_mesh.py)
+mesh_refinement:
+  iterations: 5  # Number of refinement iterations
+  damping_factor: 0.6  # Fraction of impulse to apply (0-1). Values 0.5-0.7 work well to prevent oscillation.
+  monolayer: false  # Set to true for high-defocus data where bilayer is not resolved. Fits single Gaussian instead of dual.
+  average_radius: 12  # Radius in nm for local averaging of density profiles. Larger values = more smoothing.
+  average_radius_decay: 1.0  # Factor to multiply radius by each iteration (e.g., 0.8 = 20% reduction). Set to 1.0 for no decay.
+  average_radius_min: 3.0  # Minimum averaging radius in nm (prevents over-fitting to noise in later iterations).
 
 
 
