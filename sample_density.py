@@ -151,7 +151,8 @@ def interpolate(data, data_matrix, xyz, n_v, sample_spacing=0.25, angstroms=Fals
     return value_array
 
 
-def sample_density_single(mrc_file, graph_file, sample_spacing=0.25, scan_range=10, angstroms=False):
+def sample_density_single(mrc_file, graph_file, sample_spacing=0.25, scan_range=10, angstroms=False,
+                          lowpass_sigma=0):
     """
     Sample density values for a single graph file.
 
@@ -169,6 +170,9 @@ def sample_density_single(mrc_file, graph_file, sample_spacing=0.25, scan_range=
         Half-range in nm to scan along normal vectors (default: 10)
     angstroms : bool
         If True, use angstrom units (default: False)
+    lowpass_sigma : float
+        Sigma in nm for 3D Gaussian low-pass filter applied to tomogram before
+        sampling. Set to 0 to disable filtering (default: 0).
 
     Returns
     -------
@@ -178,6 +182,14 @@ def sample_density_single(mrc_file, graph_file, sample_spacing=0.25, scan_range=
     """
     # Load MRC data
     data, data_matrix, voxsize, origin = load_mrc(mrc_file, angstroms=angstroms)
+
+    # Apply 3D low-pass filter to tomogram if requested
+    if lowpass_sigma > 0:
+        from scipy.ndimage import gaussian_filter
+        # Convert sigma from nm to voxels
+        sigma_voxels = lowpass_sigma / voxsize
+        print(f"  Applying 3D low-pass filter (sigma={lowpass_sigma} nm = {sigma_voxels:.2f} voxels)...")
+        data = gaussian_filter(data, sigma=sigma_voxels)
 
     # Load graph data
     xyz, n_v, graph = load_graph_data(graph_file, voxsize)
