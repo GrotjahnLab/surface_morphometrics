@@ -59,6 +59,12 @@ def xyz_to_ply(xyzfile, plyfile, pointweight=0.1, simplify=False, num_faces=1500
     ms.load_new_mesh(xyzfile)
     ms.compute_normal_for_point_clouds(k=k_neighbors, smoothiter=smooth_iter) # Predict smooth normals
     ms.generate_surface_reconstruction_screened_poisson(depth=depth, pointweight=pointweight, samplespernode=5.,iters=10, scale=1.2, threads=1) # Screened Poisson
+
+    if ms.current_mesh().face_number() == 0:
+        print(f"[ERROR] Screened Poisson reconstruction produced no faces for {xyzfile} - skipping. This can happen when the voxel size is not set correctly in the input MRC file.")
+        ms.clear()
+        return 1
+    
     if ultrafine:
         ms.meshing_surface_subdivision_loop(iterations=18)
         ms.generate_resampled_uniform_mesh(cellsize=pm.PercentageValue(0.05))

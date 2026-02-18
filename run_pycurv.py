@@ -30,9 +30,14 @@ import yaml
 
 import curvature
 
+# Check for -f flag
+force = "-f" in argv
+if force:
+    argv.remove("-f")
+
 # Check for a config file
 if len(argv) < 2:
-    print("Usage: run_pycurv.py config.yml [filename.surface.vtp]")
+    print("Usage: run_pycurv.py [-f] config.yml [filename.surface.vtp]")
     exit()
 
 # Check for a data dir and a work dir
@@ -46,15 +51,27 @@ with open(argv[1]) as file:
             print("No working directory is specified in the config file. The data directory will be used for input and output.")
             config["work_dir"] = config["data_dir"]
 
+# Warn if configured cores exceed logical cores
+cores = config["cores"]
+logical_cores = os.cpu_count()
+if cores > logical_cores:
+    print(f"WARNING: Configured cores ({cores}) exceeds the number of logical cores ({logical_cores}).")
+    print("This may cause performance degradation due to oversubscription.")
+    if not force:
+        answer = input("Continue anyway? [y/n] ")
+        if answer != "y":
+            exit()
+
 # Figure out what files will be run
 if len(argv) == 2:
     print("No input file specified - will run on all VTP files in the data directory")
     print("This may take a very long time - pycurv can take over an hour to run on a single mesh")
     print("It is recommended to run in parallel with a cluster submission script for individual files")
     print("Recommended usage: run_pycurv.py config.yml <meshname.surface.vtp>")
-    answer = input("Continue? [y/n]")
-    if answer != "y":
-        exit()
+    if not force:
+        answer = input("Continue? [y/n]")
+        if answer != "y":
+            exit()
     mesh_files = glob.glob(config["work_dir"]+"*.surface.vtp")
     mesh_files = [os.path.basename(f) for f in mesh_files]
 else:

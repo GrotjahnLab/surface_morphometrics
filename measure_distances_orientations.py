@@ -27,9 +27,14 @@ import yaml
 import intradistance_verticality
 import interdistance_orientation
 
+# Check for -f flag
+force = "-f" in argv
+if force:
+    argv.remove("-f")
+
 # Check for a config file
 if len(argv) < 2:
-    print("Usage: python measure_distances_orientations.py config.yml [segmentation.mrc]")
+    print("Usage: python measure_distances_orientations.py [-f] config.yml [segmentation.mrc]")
     exit()
 
 # Check for a data dir and a work dir
@@ -52,9 +57,10 @@ if len(argv) == 2:
     print("You may prefer to run in parallel with a cluster submission script for individual files")
     print("The example config and tutorial data takes about 12-15 minutes on a laptop.")
     print("Recommended usage: measure_distances_orientations.py config.yml <segmentation.mrc>")
-    answer = input("Continue? [y/n]")
-    if answer != "y":
-        exit()
+    if not force:
+        answer = input("Continue? [y/n]")
+        if answer != "y":
+            exit()
     print("Pattern Matched: "+config["data_dir"]+"*.mrc")
     segmentation_files = glob.glob(config["data_dir"]+"*.mrc")
     segmentation_files = [os.path.basename(f) for f in segmentation_files]
