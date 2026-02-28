@@ -82,15 +82,25 @@ else:
 if not os.path.isdir(config["work_dir"]):
     os.mkdir(config["work_dir"])
 
+failed_surfaces = []
 for i, surface in enumerate(mesh_files):
     print("Processing {} ({}/{})".format(surface, i+1, len(mesh_files)))
-    curvature.run_pycurv(surface, config["work_dir"],
-                        scale=1.0,
-                        radius_hit=config["curvature_measurements"]["radius_hit"],
-                        min_component=config["curvature_measurements"]["min_component"],
-                        exclude_borders=config["curvature_measurements"]["exclude_borders"],
-                        cores=config["cores"])
-    print("Completed {}\n".format(surface))
+    try:
+        curvature.run_pycurv(surface, config["work_dir"],
+                            scale=1.0,
+                            radius_hit=config["curvature_measurements"]["radius_hit"],
+                            min_component=config["curvature_measurements"]["min_component"],
+                            exclude_borders=config["curvature_measurements"]["exclude_borders"],
+                            cores=config["cores"])
+        print("Completed {}\n".format(surface))
+    except Exception as e:
+        print("WARNING: Skipping {} due to error: {}\n".format(surface, e))
+        failed_surfaces.append(surface)
+
+if failed_surfaces:
+    print("The following surfaces failed and were skipped:")
+    for s in failed_surfaces:
+        print("  - {}".format(s))
 
     
 print("-------------------------------------------------------")
