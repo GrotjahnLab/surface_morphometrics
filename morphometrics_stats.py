@@ -222,7 +222,7 @@ def ks_statistics(datasets, areas, ns, condition_names, morph_names, basename, f
                 f.write(f"{basename},KS,{condition_names[i]},{morph_names[i]},{condition_names[j]},{morph_names[j]},{ks},{p},{p_en},{p_rad}\n")
                 
 
-def statistics(datasets, basename,  condition_names, morph_names, test_type="median", filename="test.csv", figsize=(5,4), ylabel="Peak Value"):
+def statistics(datasets, basename,  condition_names, morph_names, test_type="median", filename="test.csv", figsize=(5,4), ylabel="Peak Value", custom_colors=None, separator_after=None):
     """Generate mann-whitney U test and violin plots for a set of datasets.
     Args:
         datasets (list): list of datasets to compare
@@ -233,7 +233,11 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
         filename (str): name of the output file
         figsize (tuple): size of the figure
         ylabel (str): label of the y axis
+        custom_colors (list): optional list of colors for each violin. Defaults to module colors.
+        separator_after (int): if set, draw a light grey dashed vertical line after this violin
+            index (1-based), e.g. separator_after=2 draws a line between violins 2 and 3.
         """
+    _colors = custom_colors if custom_colors is not None else colors
     raw_filename = filename[:-10]+"rawstats.csv"
     with open(raw_filename, 'w') as raw_file:
         raw_file.write(basename+f" - {test_type}\n")
@@ -275,7 +279,12 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     figure_filename = filename[:-3]+"svg"
     fig,ax=plt.subplots(figsize=figsize)
     ax.set_title(basename)
-    ax.violinplot(datasets, showmeans=True)
+    parts = ax.violinplot(datasets, showmeans=True)
+    for i, pc in enumerate(parts['bodies']):
+        pc.set_facecolor(list(_colors[i][:3]) + [0.4])
+        pc.set_edgecolor(_colors[i])
+    if separator_after is not None:
+        ax.axvline(x=separator_after + 0.5, color='lightgrey', linestyle='--', linewidth=1.5, zorder=0)
     ax.set_xticks(range(1,len(datasets)+1))
     ax.set_xticklabels([condition_names[i]+"\n"+morph_names[i] for i in range(len(condition_names))])
     ax.set_ylabel(ylabel)
@@ -284,7 +293,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     fig.savefig(figure_filename[:-3]+"png")
 
 
-def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(6,4), logx=False, vlines = True, legend=True, color_offset=0):
+def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(6,4), logx=False, vlines = True, legend=True, color_offset=0, custom_colors=None, custom_colors_light=None):
     """Construct an area-weighted histogram of the data.
     Args:
         data (array-like): list of arrays to be independently plotted.
@@ -300,7 +309,11 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         vlines (bool): whether to plot vertical lines at the histogram peaks.
         legend (bool): whether to show a legend. Default True.
         color_offset (int): offset for the color of the histogram. Default 0. Used for some weird side cases
+        custom_colors (list): optional list of colors overriding the module defaults.
+        custom_colors_light (list): optional list of light colors overriding the module defaults.
         """
+    _colors       = custom_colors       if custom_colors       is not None else colors
+    _colors_light = custom_colors_light if custom_colors_light is not None else colors_light
     assert len(data)==len(areas)
     assert len(data)==len(labels)
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
@@ -308,12 +321,11 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         bins = np.logspace(np.log10(range[0]),np.log10(range[1]), bins)
         ax.set_xscale("log")
     for index, value in enumerate(data):
-        n,binset,_ = ax.hist(value, bins=bins, weights=areas[index], label=labels[index], ec=colors[index],fc=colors_light[index],histtype="stepfilled", density=True, range = range) #
-        if vlines: 
+        n,binset,_ = ax.hist(value, bins=bins, weights=areas[index], label=labels[index], ec=_colors[index],fc=_colors_light[index],histtype="stepfilled", density=True, range = range) #
+        if vlines:
             delta = (binset[1]-binset[0])/2
             idx = n.argmax()
-            # print(idx)
-            ax.axvline(binset[idx]+delta, linestyle="--", color=colors[index])
+            ax.axvline(binset[idx]+delta, linestyle="--", color=_colors[index])
     ax.set_xlim(range)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Relative Area")
