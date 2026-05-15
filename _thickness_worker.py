@@ -118,7 +118,75 @@ def _xcorr_offset(profile, reference, x_positions):
     return offset
 
 
-# Global variables for multiprocessing workers (set by initializer)
+# Global variables for local thickness computation workers
+_lt_value_array = None
+_lt_distances = None
+_lt_neighbors = None
+_lt_x_positions = None
+
+
+def init_local_thickness_worker(value_array, distances, neighbors, x_positions):
+    """Initialize worker process with shared data for local thickness computation."""
+    global _lt_value_array, _lt_distances, _lt_neighbors, _lt_x_positions
+    _lt_value_array = value_array
+    _lt_distances = distances
+    _lt_neighbors = neighbors
+    _lt_x_positions = x_positions
+
+
+def compute_thickness_chunk(indices):
+    """
+    Compute local thickness for a chunk of triangle indices.
+
+    Returns list of thickness values (np.nan for failed fits).
+    """
+    results = []
+    for i in indices:
+        valid_mask = _lt_distances[i] != np.inf
+        if not np.any(valid_mask):
+            results.append(np.nan)
+            continue
+
+        l = _lt_distances[i][valid_mask]
+        neighbors = _lt_neighbors[i][valid_mask]
+        weights = 1.0 / (1.0 + l)
+
+        dat = np.average(_lt_value_array[neighbors], weights=weights, axis=0) * -1
+        dat = dat - dat.min()
+        dat_sum = dat.sum()
+        if dat_sum == 0:
+            results.append(np.nan)
+            continue
+        dat = dat / (80/81 * dat_sum)
+
+        try:
+            ipk = _lt_x_positions[np.argmax(dat)]
+            mid = len(dat) // 2
+            left_min = np.argmin(dat[:mid])
+            right_min = np.argmin(dat[mid:]) + mid
+
+            a = _lt_x_positions[left_min+2:right_min-2]
+            b = dat[left_min+2:right_min-2]
+
+            if len(a) >= 7:
+                p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
+                bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
+                          [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
+                popt, _ = opt.curve_fit(_dual_gaussian, a, b, p0, bounds=bounds)
+                thickness = np.abs(popt[4] - popt[1])
+                if 2.0 <= thickness <= 7.0:
+                    results.append(thickness)
+                else:
+                    results.append(np.nan)
+            else:
+                results.append(np.nan)
+        except Exception:
+            results.append(np.nan)
+
+    return results
+
+
+# Global variables for offset fitting workers (set by initializer)
 _worker_thickness_arr = None
 _worker_distances = None
 _worker_neighbor_indices = None

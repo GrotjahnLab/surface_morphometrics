@@ -38,78 +38,9 @@ from matplotlib import pyplot as plt
 
 from sample_density import load_mrc, sample_density_single
 from measure_thickness import find_mins, dual_gaussian, monogaussian
-from _thickness_worker import init_worker, fit_triangle_chunk_offsets
+from _thickness_worker import (init_worker, fit_triangle_chunk_offsets,
+                               init_local_thickness_worker, compute_thickness_chunk)
 import curvature
-
-
-# Global variables for thickness worker processes
-_thickness_value_array = None
-_thickness_distances = None
-_thickness_neighbors = None
-_thickness_x_positions = None
-
-
-def _init_thickness_worker(value_array, distances, neighbors, x_positions):
-    """Initialize worker process with shared data for thickness computation."""
-    global _thickness_value_array, _thickness_distances, _thickness_neighbors, _thickness_x_positions
-    _thickness_value_array = value_array
-    _thickness_distances = distances
-    _thickness_neighbors = neighbors
-    _thickness_x_positions = x_positions
-
-
-def _compute_thickness_chunk(indices):
-    """
-    Compute local thickness for a chunk of triangle indices.
-
-    Returns list of thickness values (np.nan for failed fits).
-    """
-    results = []
-    for i in indices:
-        valid_mask = _thickness_distances[i] != np.inf
-        if not np.any(valid_mask):
-            results.append(np.nan)
-            continue
-
-        l = _thickness_distances[i][valid_mask]
-        neighbors = _thickness_neighbors[i][valid_mask]
-        weights = 1.0 / (1.0 + l)
-
-        dat = np.average(_thickness_value_array[neighbors], weights=weights, axis=0) * -1
-        dat = dat - dat.min()
-        dat_sum = dat.sum()
-        if dat_sum == 0:
-            results.append(np.nan)
-            continue
-        dat = dat / (80/81 * dat_sum)
-
-        # Fit dual Gaussian to get thickness
-        try:
-            ipk = _thickness_x_positions[np.argmax(dat)]
-            mid = len(dat) // 2
-            left_min = np.argmin(dat[:mid])
-            right_min = np.argmin(dat[mid:]) + mid
-
-            a = _thickness_x_positions[left_min+2:right_min-2]
-            b = dat[left_min+2:right_min-2]
-
-            if len(a) >= 7:
-                p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-                bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
-                          [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
-                popt, _ = opt.curve_fit(dual_gaussian, a, b, p0, bounds=bounds)
-                thickness = np.abs(popt[4] - popt[1])
-                # Filter unreasonable thicknesses
-                if 2.0 <= thickness <= 7.0:
-                    results.append(thickness)
-                else:
-                    results.append(np.nan)
-            else:
-                results.append(np.nan)
-        except Exception:
-            results.append(np.nan)
-
-    return results
 
 
 def compute_local_thicknesses_parallel(value_array, xyz, x_positions, average_radius, n_workers=None):
@@ -153,10 +84,10 @@ def compute_local_thicknesses_parallel(value_array, xyz, x_positions, average_ra
               for i in range(0, num_triangles, chunk_size)]
 
     # Run parallel computation
-    with ctx.Pool(n_workers, initializer=_init_thickness_worker,
+    with ctx.Pool(n_workers, initializer=init_local_thickness_worker,
                   initargs=(value_array, distances, neighbors, x_positions)) as pool:
         chunk_results = list(tqdm(
-            pool.imap(_compute_thickness_chunk, chunks),
+            pool.imap(compute_thickness_chunk, chunks),
             total=len(chunks),
             desc="  Computing local thicknesses"
         ))
@@ -363,6 +294,20 @@ def compute_triangle_offsets(graph, sampling_data, x_positions, average_radius, 
     if len(valid_offsets) > 0:
         truly_failed = (fit_methods == 0)
         offsets[truly_failed] = median_offset
+
+    # 4. For xcorr iterations, zero-mean the offsets.
+    # The xcorr reference is the average of raw per-triangle profiles, while each
+    # local comparison uses a spatially-averaged (smoother) profile.  That shape
+    # mismatch introduces a constant systematic bias (especially on small, curved
+    # structures like vesicles).  Since global centering is handled by the
+    # Gaussian iterations, xcorr should only apply *local* corrections — zero-
+    # meaning removes the systematic drift while preserving relative sharpening.
+    if use_xcorr:
+        xcorr_mask = fit_methods == 4
+        if np.any(xcorr_mask):
+            mean_xcorr = np.mean(offsets[xcorr_mask])
+            offsets[xcorr_mask] -= mean_xcorr
+            print(f"  Removed mean xcorr bias ({mean_xcorr:+.3f} nm) — local sharpening only")
 
     return offsets, sigmas1, sigmas2
 
@@ -571,6 +516,7 @@ def recompute_normals(surf):
     normals_filter.SetInputData(surf)
     normals_filter.ComputePointNormalsOn()
     normals_filter.ComputeCellNormalsOn()
+    normals_filter.SplittingOff()  # prevent vertex duplication at feature edges
     normals_filter.Update()
     return normals_filter.GetOutput()
 
@@ -615,6 +561,13 @@ def run_pycurv_refinement(vtp_file, output_base, pixel_size, radius_hit, cores=6
     if vtp_file_resolved != surface_vtp_resolved:
         shutil.copy(vtp_file, surface_vtp)
 
+    # Delete any stale cached scaled_cleaned files so pycurv rebuilds the graph
+    # from the newly displaced surface rather than reusing an old cached graph.
+    for ext in [".scaled_cleaned.gt", ".scaled_cleaned.vtp"]:
+        stale = f"{output_dir}{basename}{ext}"
+        if os.path.exists(stale):
+            os.remove(stale)
+
     # Run pycurv using existing workflow (scale=1 since surface is already in nm)
     curvature.run_pycurv(
         f"{basename}.surface.vtp",
@@ -632,12 +585,68 @@ def run_pycurv_refinement(vtp_file, output_base, pixel_size, radius_hit, cores=6
     return graph_file, surface_file
 
 
+def build_lightweight_graph(surf, output_gt_path):
+    """
+    Build a minimal graph_tool Graph from a displaced VTK surface.
+
+    Extracts triangle centroids (xyz) and VTK cell normals (n_v) directly from
+    the surface without running pycurv NVV.  Sufficient for the next iteration's
+    density sampling and KDTree queries.  Runs in seconds vs ~28 min for NVV.
+
+    Parameters
+    ----------
+    surf : vtkPolyData
+        Surface with VTK-computed cell normals (output of recompute_normals).
+    output_gt_path : str
+        Path to write the .gt file.
+
+    Returns
+    -------
+    str
+        Path to the saved .gt file.
+    """
+    from vtk.util import numpy_support
+    import graph_tool as gt
+
+    # Extract vertex positions
+    pts = numpy_support.vtk_to_numpy(surf.GetPoints().GetData())  # (n_points, 3)
+
+    # Extract triangle connectivity as a flat array [3, v0, v1, v2, 3, v3, ...]
+    polys_data = numpy_support.vtk_to_numpy(surf.GetPolys().GetData())
+    connectivity = polys_data.reshape(-1, 4)[:, 1:]  # (n_triangles, 3)
+    centroids = pts[connectivity].mean(axis=1)        # (n_triangles, 3), nm units
+
+    # Extract VTK cell normals
+    cell_normals_data = surf.GetCellData().GetNormals()
+    if cell_normals_data is not None:
+        normals = numpy_support.vtk_to_numpy(cell_normals_data)  # (n_triangles, 3)
+    else:
+        normals = np.zeros((len(centroids), 3))
+        normals[:, 2] = 1.0
+
+    n_triangles = len(centroids)
+
+    # Build minimal graph_tool Graph with only the properties sampling needs
+    g = gt.Graph(directed=False)
+    g.add_vertex(n_triangles)
+    xyz_prop = g.new_vertex_property("vector<double>")
+    n_v_prop = g.new_vertex_property("vector<double>")
+    for i in range(n_triangles):
+        xyz_prop[i] = centroids[i]
+        n_v_prop[i] = normals[i]
+    g.vp['xyz'] = xyz_prop
+    g.vp['n_v'] = n_v_prop
+    g.save(output_gt_path)
+    return output_gt_path
+
+
 def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_size,
                           radius_hit, average_radius, damping_factor, sample_spacing,
                           scan_range, angstroms, cores, monolayer=False,
                           original_positions=None, max_total_offset=None, use_xcorr=False,
                           smooth_offsets=True, offset_smoothing_radius=None,
-                          laplacian_iterations=0, laplacian_lambda=0.5, lowpass_sigma=0):
+                          laplacian_iterations=0, laplacian_lambda=0.5, lowpass_sigma=0,
+                          compute_thickness=False):
     """
     Perform a single iteration of mesh refinement.
 
@@ -685,6 +694,9 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
         Laplacian smoothing strength (0-1)
     lowpass_sigma : float
         Sigma in nm for 3D Gaussian low-pass filter on tomogram before sampling (0 = disabled)
+    compute_thickness : bool
+        If True, compute local thickness distribution for all triangles (slow ~2 min).
+        Only needed on the final iteration for the convergence histogram.
 
     Returns
     -------
@@ -696,23 +708,75 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
     tg.graph = load_graph(graph_file)
     surf = io.load_poly(vtp_file)
 
-    # Sample density along normals (with optional low-pass filtering for fitting)
+    # Sample density along normals.
+    # For xcorr iterations, apply the configured lowpass filter.
+    # For Gaussian iterations, always sample unfiltered so the bilayer's two peaks
+    # remain sharp enough for the global average dual-Gaussian fit.
+    iter_lowpass_sigma = lowpass_sigma if use_xcorr else 0
     print("Sampling density along normal vectors...")
     value_array, x_positions, voxsize = sample_density_single(
         mrc_file, graph_file,
         sample_spacing=sample_spacing, scan_range=scan_range, angstroms=angstroms,
-        lowpass_sigma=lowpass_sigma
+        lowpass_sigma=iter_lowpass_sigma
     )
     # Convert to DataFrame with position headers
     header = [f"{p:.4f}" for p in x_positions]
     sampling_data = pd.DataFrame(value_array, columns=header)
 
+    # For Gaussian iterations, fit the global average profile with a dual Gaussian
+    # and use its midpoint as a uniform offset for all triangles.  The global
+    # average has far better SNR than any individual triangle profile, so the
+    # midpoint estimate is much more reliable than the mean of per-triangle fits.
+    global_center_offset = np.nan
+    global_sigma1 = np.nan
+    global_sigma2 = np.nan
+    if not use_xcorr:
+        print("Fitting dual Gaussian to global average profile for centering...")
+        all_profiles_raw = value_array * -1
+        all_profiles_raw = all_profiles_raw - all_profiles_raw.min(axis=1, keepdims=True)
+        row_sums_raw = all_profiles_raw.sum(axis=1, keepdims=True)
+        valid_raw = row_sums_raw.flatten() > 0
+        all_profiles_raw[valid_raw] /= (80 / 81 * row_sums_raw[valid_raw])
+        pre_disp_avg = np.mean(all_profiles_raw[valid_raw], axis=0)
+
+        try:
+            ipk_g = x_positions[np.argmax(pre_disp_avg)]
+            mid_g = len(pre_disp_avg) // 2
+            lm_g = np.argmin(pre_disp_avg[:mid_g])
+            rm_g = np.argmin(pre_disp_avg[mid_g:]) + mid_g
+            ag = x_positions[lm_g + 2:rm_g - 2]
+            bg = pre_disp_avg[lm_g + 2:rm_g - 2]
+            if len(ag) >= 7:
+                p0g = [0.02, ipk_g - 0.5, 1.5, 0.02, ipk_g + 0.5, 1.5, 0]
+                bounds_g = ([0.005, ipk_g - 6, 0.8, 0.005, ipk_g - 1.5, 0.8, -1],
+                            [0.04, ipk_g + 1.5, 2.2, 0.04, ipk_g + 6, 2.2, 1])
+                popt_g, _ = opt.curve_fit(dual_gaussian, ag, bg, p0g, bounds=bounds_g)
+                global_center_offset = (popt_g[1] + popt_g[4]) / 2
+                global_sigma1 = popt_g[2]
+                global_sigma2 = popt_g[5]
+                print(f"  Global avg profile: c1={popt_g[1]:.3f} nm, c2={popt_g[4]:.3f} nm, "
+                      f"midpoint={global_center_offset:+.3f} nm, "
+                      f"thickness={abs(popt_g[4] - popt_g[1]):.3f} nm")
+            else:
+                print("  Not enough points in fitting window for global avg dual Gaussian")
+        except Exception as e:
+            print(f"  Global avg profile dual Gaussian fit failed: {e}")
+
     # Compute triangle offsets from density profiles
     print("Computing triangle offsets from density profiles...")
-    offsets, sigmas1, sigmas2 = compute_triangle_offsets(
-        tg.graph, sampling_data, x_positions, average_radius, monolayer=monolayer,
-        use_xcorr=use_xcorr
-    )
+    if not use_xcorr and not np.isnan(global_center_offset):
+        # Use the reliable global average midpoint as a uniform offset for every triangle
+        num_triangles = len(sampling_data)
+        offsets = np.full(num_triangles, global_center_offset)
+        sigmas1 = np.full(num_triangles, global_sigma1)
+        sigmas2 = np.full(num_triangles, global_sigma2)
+        print(f"  Using global midpoint {global_center_offset:+.3f} nm for all {num_triangles} triangles")
+    else:
+        # Fallback: per-triangle fitting (xcorr iterations, or if global fit failed)
+        offsets, sigmas1, sigmas2 = compute_triangle_offsets(
+            tg.graph, sampling_data, x_positions, average_radius, monolayer=monolayer,
+            use_xcorr=use_xcorr
+        )
 
     # Get normal vectors and coordinates from graph
     normals = tg.graph.vp.n_v.get_2d_array([0, 1, 2])
@@ -748,14 +812,27 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
     io.save_vtp(refined_surf, refined_vtp)
     print(f"Saved refined surface: {refined_vtp}")
 
-    # Run pycurv on refined surface
-    print("Running pycurv normal vector voting...")
-    new_graph_file, new_surface_file = run_pycurv_refinement(
-        refined_vtp, output_base, pixel_size, radius_hit, cores
-    )
+    # For xcorr iterations (except the final one), skip pycurv NVV (~28 min) and
+    # build a lightweight graph from VTK normals instead (~seconds).  XCorr applies
+    # small local displacements so VTK normals are good enough for the next
+    # iteration's sampling and KDTree.  The final iteration always runs full pycurv
+    # so the output graph has proper NVV normals for downstream curvature analysis.
+    if use_xcorr and not compute_thickness:
+        print("Building lightweight graph from VTK normals (skipping pycurv NVV)...")
+        new_graph_file = build_lightweight_graph(refined_surf, f"{output_base}.lightweight.gt")
+        new_surface_file = refined_vtp
+        print(f"  Lightweight graph: {new_graph_file}")
+    else:
+        print("Running pycurv normal vector voting...")
+        new_graph_file, new_surface_file = run_pycurv_refinement(
+            refined_vtp, output_base, pixel_size, radius_hit, cores
+        )
 
     # Save density sampling CSV (pre-refinement sampling used for fitting)
-    sampling_csv = f"{output_base}.AVV_rh{radius_hit}_sampling.csv"
+    if use_xcorr:
+        sampling_csv = f"{output_base}.lightweight_sampling.csv"
+    else:
+        sampling_csv = f"{output_base}.AVV_rh{radius_hit}_sampling.csv"
     header = ",".join([f"{p:.4f}" for p in x_positions])
     np.savetxt(sampling_csv, sampling_data.values, delimiter=",", header=header, comments="")
     print(f"Saved sampling data: {sampling_csv}")
@@ -832,12 +909,16 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
             dat = dat / (80/81 * dat_sum)
         sample_profiles.append(dat)
 
-    # Compute local thicknesses for all triangles using parallel dual Gaussian fitting
-    local_thicknesses = compute_local_thicknesses_parallel(
-        refined_value_array, refined_xyz, refined_x_positions, average_radius
-    )
-    valid_thicknesses = local_thicknesses[~np.isnan(local_thicknesses)]
-    print(f"  Valid thickness measurements: {len(valid_thicknesses)}/{len(local_thicknesses)}")
+    # Compute local thicknesses for all triangles using parallel dual Gaussian fitting.
+    # Only run on the final iteration (compute_thickness=True) — it adds ~2 min per surface.
+    if compute_thickness:
+        local_thicknesses = compute_local_thicknesses_parallel(
+            refined_value_array, refined_xyz, refined_x_positions, average_radius
+        )
+        valid_thicknesses = local_thicknesses[~np.isnan(local_thicknesses)]
+        print(f"  Valid thickness measurements: {len(valid_thicknesses)}/{len(local_thicknesses)}")
+    else:
+        valid_thicknesses = np.array([])
 
     # Compute statistics
     valid_sigmas1 = sigmas1[~np.isnan(sigmas1)]
@@ -848,6 +929,7 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
         'std_sigma1': np.std(valid_sigmas1) if len(valid_sigmas1) > 0 else np.nan,
         'std_sigma2': np.std(valid_sigmas2) if len(valid_sigmas2) > 0 else np.nan,
         'mean_offset': np.mean(np.abs(offsets)),
+        'signed_mean_offset': np.mean(offsets),
         'std_offset': np.std(offsets),
         'mean_displacement': np.mean(displacements),
         'max_displacement': np.max(displacements),
@@ -869,8 +951,9 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
 
 def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                 component=None, tomogram=None, mrc_file_override=None, monolayer=None,
-                max_total_offset=None, use_xcorr=None, smooth_offsets=None,
-                laplacian_iterations=None, laplacian_lambda=None, lowpass_sigma=None):
+                max_total_offset=None, use_xcorr=None, xcorr_iterations=None,
+                smooth_offsets=None, laplacian_iterations=None, laplacian_lambda=None,
+                lowpass_sigma=None):
     """
     Iteratively refine mesh positions using density-guided vertex movement.
 
@@ -897,8 +980,12 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
         Maximum total displacement from original surface (nm).
         Prevents divergence. If None, reads from config (default: 5.0).
     use_xcorr : bool or None
-        If True, use cross-correlation with global average profile instead
-        of Gaussian fitting. More robust to noise. If None, reads from config.
+        If True, use cross-correlation for all iterations. Superseded by
+        xcorr_iterations if specified. If None, reads from config.
+    xcorr_iterations : int or None
+        Number of initial iterations using cross-correlation before switching
+        to dual Gaussian fitting. If None, reads from config (falls back to
+        use_xcorr flag).
     smooth_offsets : bool or None
         If True, spatially smooth offset field before applying. If None, reads from config.
     laplacian_iterations : int or None
@@ -960,9 +1047,19 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
     # Max total offset: CLI override > config > default (5.0 nm)
     if max_total_offset is None:
         max_total_offset = refinement_config.get("max_total_offset", 5.0)
-    # Cross-correlation mode: CLI override > config > default (False)
-    if use_xcorr is None:
-        use_xcorr = refinement_config.get("use_xcorr", False)
+    # xcorr_iterations: which iterations use cross-correlation (set of 1-based iteration numbers)
+    # Accepts int (first N iterations), list of iteration numbers, or None (falls back to use_xcorr)
+    # Priority: xcorr_iterations arg > config xcorr_iterations > use_xcorr flag
+    if xcorr_iterations is None:
+        xcorr_iterations = refinement_config.get("xcorr_iterations", None)
+    if xcorr_iterations is None:
+        if use_xcorr is None:
+            use_xcorr = refinement_config.get("use_xcorr", False)
+        xcorr_iterations = set(range(1, iterations + 1)) if use_xcorr else set()
+    elif isinstance(xcorr_iterations, int):
+        xcorr_iterations = set(range(1, xcorr_iterations + 1))
+    else:
+        xcorr_iterations = set(xcorr_iterations)
     # Smoothing parameters: CLI override > config > defaults
     if smooth_offsets is None:
         smooth_offsets = refinement_config.get("smooth_offsets", True)
@@ -991,12 +1088,18 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
         print(f"  Average radius decay: {average_radius_decay} (min: {average_radius_min} nm)")
     print(f"  Radius hit: {radius_hit}")
     print(f"  Max total offset: {max_total_offset} nm")
-    if use_xcorr:
-        print(f"  Fitting method: cross-correlation")
-    elif monolayer:
-        print(f"  Fitting method: monolayer (single Gaussian)")
+    all_iters = set(range(1, iterations + 1))
+    if xcorr_iterations == all_iters:
+        print(f"  Fitting method: cross-correlation (all {iterations} iterations)")
+    elif len(xcorr_iterations) == 0:
+        if monolayer:
+            print(f"  Fitting method: monolayer (single Gaussian)")
+        else:
+            print(f"  Fitting method: bilayer (dual Gaussian)")
     else:
-        print(f"  Fitting method: bilayer (dual Gaussian)")
+        xcorr_list = sorted(xcorr_iterations)
+        gaussian_list = sorted(all_iters - xcorr_iterations)
+        print(f"  Fitting method: xcorr on iter(s) {xcorr_list}, dual Gaussian on iter(s) {gaussian_list}")
     # Smoothing settings
     if smooth_offsets:
         smooth_r = offset_smoothing_radius if offset_smoothing_radius else "same as average_radius"
@@ -1007,8 +1110,6 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
         print(f"  Laplacian smoothing: {laplacian_iterations} iterations, lambda={laplacian_lambda}")
     if lowpass_sigma > 0:
         print(f"  Low-pass filter: sigma={lowpass_sigma} nm (applied to tomogram)")
-    else:
-        print(f"  Fitting method: bilayer (dual Gaussian)")
     print(f"  Components: {components}")
 
     os.makedirs(output_dir, exist_ok=True)
@@ -1140,12 +1241,9 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                 except Exception:
                     pass
 
-                # Compute local thicknesses for initial surface using parallel processing
-                init_local_thicknesses = compute_local_thicknesses_parallel(
-                    init_value_array, init_xyz, init_x_positions, average_radius
-                )
-                init_valid_thicknesses = init_local_thicknesses[~np.isnan(init_local_thicknesses)]
-                print(f"  Valid thickness measurements: {len(init_valid_thicknesses)}/{len(init_local_thicknesses)}")
+                # Skip local thickness computation for the initial surface — it's
+                # only needed on the final iteration for the convergence histogram.
+                init_valid_thicknesses = np.array([])
 
                 # Store as iteration 0
                 iteration_stats.append({
@@ -1156,6 +1254,7 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                     'std_sigma1': np.nan,
                     'std_sigma2': np.nan,
                     'mean_offset': np.nan,
+                    'signed_mean_offset': np.nan,
                     'std_offset': np.nan,
                     'mean_displacement': 0.0,
                     'max_displacement': 0.0,
@@ -1211,6 +1310,10 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                     iter_output_base = f"{output_dir}{basename}_refined_iter{iter_num}"
 
                     # Run refinement iteration
+                    iter_use_xcorr = iter_num in xcorr_iterations
+                    if 0 < len(xcorr_iterations) < iterations:
+                        method_label = "xcorr" if iter_use_xcorr else "dual Gaussian"
+                        print(f"  Fitting method this iteration: {method_label}")
                     stats = refine_mesh_iteration(
                         current_graph, current_vtp, mrc_file, iter_output_base,
                         pixel_size, radius_hit, current_avg_radius, damping_factor,
@@ -1218,12 +1321,13 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                         monolayer=monolayer,
                         original_positions=original_positions,
                         max_total_offset=max_total_offset,
-                        use_xcorr=use_xcorr,
+                        use_xcorr=iter_use_xcorr,
                         smooth_offsets=smooth_offsets,
                         offset_smoothing_radius=offset_smoothing_radius,
                         laplacian_iterations=laplacian_iterations,
                         laplacian_lambda=laplacian_lambda,
-                        lowpass_sigma=lowpass_sigma
+                        lowpass_sigma=lowpass_sigma,
+                        compute_thickness=(iter_num == iterations)
                     )
 
                     stats['iteration'] = iter_num
@@ -1289,12 +1393,25 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                         print(f"  Mean thickness: {stats['mean_thickness']:.3f} +/- {stats['std_thickness']:.3f} nm")
                     if not np.isnan(stats['avg_profile_sigma1']):
                         print(f"  Avg profile sigmas: {stats['avg_profile_sigma1']:.3f}, {stats['avg_profile_sigma2']:.3f} nm")
-                    print(f"  Mean offset: {stats['mean_offset']:.3f} nm")
+                    print(f"  Mean |offset|: {stats['mean_offset']:.3f} nm  (signed mean: {stats['signed_mean_offset']:+.3f} nm)")
                     print(f"  Mean displacement: {stats['mean_displacement']:.3f} nm")
 
                     # Update for next iteration
                     current_graph = stats['graph_file']
                     current_vtp = stats['surface_file']
+
+                    # Pycurv's cleaning can change vertex count.  If it did, the
+                    # original_positions baseline is stale and will cause an IndexError
+                    # in apply_vertex_displacements.  Reset it to the current surface so
+                    # the max_total_offset guard remains valid going forward.
+                    check_surf = io.load_poly(current_vtp)
+                    new_n = check_surf.GetPoints().GetNumberOfPoints()
+                    if new_n != len(original_positions):
+                        print(f"  Note: vertex count changed {len(original_positions)} → {new_n} "
+                              f"(pycurv cleaning); resetting displacement baseline")
+                        original_positions = np.array(
+                            [check_surf.GetPoints().GetPoint(i) for i in range(new_n)]
+                        )
 
                 # Save iteration statistics (full, including iteration 0)
                 stats_df_full = pd.DataFrame(iteration_stats)
@@ -1340,9 +1457,14 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                 # Offset plot
                 ax2 = axes[0, 1]
                 ax2.errorbar(iters, stats_df['mean_offset'], yerr=stats_df['std_offset'],
-                            marker='o', capsize=3, color='green')
+                            marker='o', capsize=3, color='green', label='Mean |offset|')
+                if 'signed_mean_offset' in stats_df.columns:
+                    ax2.plot(iters, stats_df['signed_mean_offset'], marker='s', color='orange',
+                            linestyle='--', label='Signed mean offset')
+                    ax2.axhline(0, color='gray', linestyle=':', alpha=0.5)
+                    ax2.legend(fontsize=8)
                 ax2.set_xlabel('Iteration')
-                ax2.set_ylabel('Mean |Offset| (nm)')
+                ax2.set_ylabel('Offset (nm)')
                 ax2.set_title('Center Offset Evolution')
                 ax2.grid(True, alpha=0.3)
 
@@ -1460,7 +1582,9 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
 @click.option('--max-offset', type=float, default=None,
               help='Maximum total displacement from original surface in nm (default: 5.0)')
 @click.option('--xcorr', is_flag=True, default=False,
-              help='Use cross-correlation with global average instead of Gaussian fitting (more robust to noise)')
+              help='Use cross-correlation with global average instead of Gaussian fitting for all iterations')
+@click.option('--xcorr-iterations', type=int, default=None,
+              help='Number of initial iterations using cross-correlation, then switch to dual Gaussian fitting')
 @click.option('--no-smooth', is_flag=True, default=False,
               help='Disable offset field smoothing')
 @click.option('--laplacian', '-l', type=int, default=None,
@@ -1470,7 +1594,7 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
 @click.option('--lowpass', type=float, default=None,
               help='3D Gaussian low-pass filter sigma in nm applied to tomogram (default: from config, 0=disabled)')
 def refine_mesh_cli(configfile, iterations, damping, output, component, tomogram, mrc, monolayer, max_offset, xcorr,
-                    no_smooth, laplacian, laplacian_lambda, lowpass):
+                    xcorr_iterations, no_smooth, laplacian, laplacian_lambda, lowpass):
     """
     Iteratively refine mesh positions using density-guided vertex movement.
 
@@ -1490,8 +1614,13 @@ def refine_mesh_cli(configfile, iterations, damping, output, component, tomogram
     less accurate but still helps center the surface on the membrane.
 
     Use --xcorr to use cross-correlation with the global average profile instead
-    of Gaussian fitting. This is more robust to noise and unusual profile shapes,
-    but doesn't provide sigma (peak width) values. Good for challenging data.
+    of Gaussian fitting for all iterations. More robust to noise and unusual
+    profile shapes, but doesn't provide sigma (peak width) values.
+
+    Use --xcorr-iterations N to use cross-correlation for the first N iterations
+    then switch to dual Gaussian fitting. Useful when the mesh starts far from
+    the membrane center (xcorr aligns quickly) and you want the precision of
+    Gaussian fitting for the final iterations.
 
     Smoothing options: By default, offset smoothing and Laplacian smoothing are
     enabled to reduce surface roughness. Use --no-smooth to disable offset
@@ -1512,6 +1641,7 @@ def refine_mesh_cli(configfile, iterations, damping, output, component, tomogram
         monolayer=monolayer_arg,
         max_total_offset=max_offset,
         use_xcorr=xcorr_arg,
+        xcorr_iterations=xcorr_iterations,
         smooth_offsets=smooth_arg,
         laplacian_iterations=laplacian,
         laplacian_lambda=laplacian_lambda,
@@ -1522,21 +1652,25 @@ def refine_mesh_cli(configfile, iterations, damping, output, component, tomogram
     print("Refinement complete!")
     print("="*60)
 
+    def _sigma_str(stat):
+        s1, s2 = stat['mean_sigma1'], stat['mean_sigma2']
+        if np.isnan(s1):
+            return "N/A (xcorr)"
+        elif np.isnan(s2):
+            return f"{s1:.3f} nm (monolayer)"
+        else:
+            return f"{(s1+s2)/2:.3f} nm"
+
     # Print summary
     for basename, iter_stats in stats.items():
         if iter_stats:
             first = iter_stats[0]
             last = iter_stats[-1]
             print(f"\n{basename}:")
-            # Handle monolayer mode where sigma2 is NaN
-            if np.isnan(first['mean_sigma2']):
-                print(f"  Initial sigma: {first['mean_sigma1']:.3f} nm (monolayer)")
-                print(f"  Final sigma:   {last['mean_sigma1']:.3f} nm (monolayer)")
-            else:
-                print(f"  Initial sigma: {(first['mean_sigma1']+first['mean_sigma2'])/2:.3f} nm")
-                print(f"  Final sigma:   {(last['mean_sigma1']+last['mean_sigma2'])/2:.3f} nm")
-            print(f"  Initial offset: {first['mean_offset']:.3f} nm")
-            print(f"  Final offset:   {last['mean_offset']:.3f} nm")
+            print(f"  Initial sigma: {_sigma_str(first)}")
+            print(f"  Final sigma:   {_sigma_str(last)}")
+            print(f"  Initial offset: {first['mean_offset']:.3f} nm  (signed: {first.get('signed_mean_offset', float('nan')):+.3f} nm)")
+            print(f"  Final offset:   {last['mean_offset']:.3f} nm  (signed: {last.get('signed_mean_offset', float('nan')):+.3f} nm)")
 
 
 if __name__ == "__main__":
