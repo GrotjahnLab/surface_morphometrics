@@ -118,6 +118,59 @@ def _xcorr_offset(profile, reference, x_positions):
     return offset
 
 
+def _xcorr_offsets_batch(profiles, reference, x_positions):
+    """
+    Vectorized cross-correlation of N profiles against a single reference.
+
+    Uses FFT-based batch correlation instead of N separate np.correlate calls,
+    which is ~10x faster for typical neighborhood sizes (~50 profiles).
+
+    Returns shifts in the same units as x_positions (one value per profile).
+    """
+    N, L = profiles.shape
+    # Normalize each profile (zero mean, unit variance)
+    means = profiles.mean(axis=1, keepdims=True)
+    prof_norm = profiles - means
+    stds = prof_norm.std(axis=1, keepdims=True)
+    nonzero = stds.flatten() > 0
+    prof_norm[nonzero] /= stds[nonzero]
+
+    ref_norm = reference - reference.mean()
+    ref_std = reference.std()
+    if ref_std == 0:
+        return np.zeros(N)
+    ref_norm = ref_norm / ref_std
+
+    # Batch cross-correlation via FFT: correlate(a, b) = IFFT(FFT(a) * conj(FFT(b)))
+    # Use next power-of-2 for FFT efficiency
+    n_full = 2 * L - 1
+    n_fft = 1 << (n_full - 1).bit_length()
+    P = np.fft.rfft(prof_norm, n=n_fft, axis=1)   # (N, n_fft//2+1)
+    R = np.fft.rfft(ref_norm, n=n_fft)             # (n_fft//2+1,)
+    corr = np.fft.irfft(P * np.conj(R)[np.newaxis, :], n=n_fft, axis=1)
+    # Full-length slice (same as mode='full' output)
+    corr = np.concatenate([corr[:, -(L - 1):], corr[:, :L]], axis=1)  # (N, 2L-1)
+
+    # Find peak and do parabolic sub-pixel refinement (vectorized)
+    peak_idx = np.argmax(corr, axis=1)  # (N,)
+    center_idx = L - 1
+    sub_pixel = np.zeros(N)
+    valid_pk = (peak_idx >= 1) & (peak_idx < n_full - 1)
+    if np.any(valid_pk):
+        rows = np.where(valid_pk)[0]
+        pi = peak_idx[rows]
+        y0 = corr[rows, pi - 1]
+        y1 = corr[rows, pi]
+        y2 = corr[rows, pi + 1]
+        denom = 2 * (2 * y1 - y0 - y2)
+        good = np.abs(denom) > 1e-10
+        sub_pixel[rows[good]] = (y0[good] - y2[good]) / denom[good]
+
+    sample_spacing = x_positions[1] - x_positions[0] if len(x_positions) > 1 else 1.0
+    shift_samples = (peak_idx + sub_pixel) - center_idx
+    return shift_samples * sample_spacing
+
+
 # Global variables for local thickness computation workers
 _lt_value_array = None
 _lt_distances = None
@@ -194,13 +247,18 @@ _worker_x = None
 _worker_monolayer = False
 _worker_reference = None  # Reference profile for cross-correlation
 _worker_use_xcorr = False  # Whether to use cross-correlation method
+_worker_global_fit_params = None  # (c1, w1, c2, w2) from global dual Gaussian fit
+_worker_rolling_xcorr = False  # Whether fit_triangle_chunk aligns neighbors before averaging
+_worker_raw_average = True    # If True: average raw profiles then normalize (original behavior)
 
 
 def init_worker(thickness_arr, distances, neighbor_indices, x, monolayer=False,
-                reference=None, use_xcorr=False):
+                reference=None, use_xcorr=False, global_fit_params=None,
+                rolling_xcorr=False, raw_average=True):
     """Initialize worker process with shared data."""
     global _worker_thickness_arr, _worker_distances, _worker_neighbor_indices
     global _worker_x, _worker_monolayer, _worker_reference, _worker_use_xcorr
+    global _worker_global_fit_params, _worker_rolling_xcorr, _worker_raw_average
     _worker_thickness_arr = thickness_arr
     _worker_distances = distances
     _worker_neighbor_indices = neighbor_indices
@@ -208,6 +266,9 @@ def init_worker(thickness_arr, distances, neighbor_indices, x, monolayer=False,
     _worker_monolayer = monolayer
     _worker_reference = reference
     _worker_use_xcorr = use_xcorr
+    _worker_global_fit_params = global_fit_params
+    _worker_rolling_xcorr = rolling_xcorr
+    _worker_raw_average = raw_average
 
 
 def fit_triangle_chunk(indices):
@@ -221,6 +282,9 @@ def fit_triangle_chunk(indices):
     list of tuples
         [(thickness, offset), ...] for each triangle in chunk
     """
+    sample_spacing = _worker_x[1] - _worker_x[0] if len(_worker_x) > 1 else 1.0
+    max_shift_samples = max(1, int(round(2.0 / sample_spacing)))
+
     results = []
     for i in indices:
         # Get valid neighbors (those within distance bound)
@@ -232,17 +296,48 @@ def fit_triangle_chunk(indices):
             results.append((np.nan, 0))
             continue
 
-        # Vectorized weight calculation
         weights = 1.0 / (1.0 + l)
 
-        # Compute weighted average of density profiles
-        dat = np.average(_worker_thickness_arr[neighbors], weights=weights, axis=0) * -1
-        dat = dat - dat.min()
-        dat_sum = dat.sum()
-        if dat_sum == 0:
-            results.append((np.nan, 0))
-            continue
-        dat = dat / (80/81 * dat_sum)
+        if _worker_raw_average:
+            # Original measure_thickness.py behavior: weighted-average raw profiles,
+            # then invert and normalize the composite.
+            dat = np.average(_worker_thickness_arr[neighbors], weights=weights, axis=0) * -1
+            dat = dat - dat.min()
+            dat_sum = dat.sum()
+            if dat_sum == 0:
+                results.append((np.nan, 0))
+                continue
+            dat = dat / (80 / 81 * dat_sum)
+        else:
+            # Invert and normalize each neighbor's profile individually before averaging.
+            indiv = _worker_thickness_arr[neighbors] * -1
+            mins = indiv.min(axis=1, keepdims=True)
+            indiv = indiv - mins
+            row_sums = indiv.sum(axis=1, keepdims=True)
+            valid_rows = row_sums.flatten() > 0
+            if not np.any(valid_rows):
+                results.append((np.nan, 0))
+                continue
+            indiv[valid_rows] /= (80 / 81 * row_sums[valid_rows])
+
+            valid_profs = indiv[valid_rows]
+            valid_weights = weights[valid_rows]
+
+            dat0 = np.average(valid_profs, weights=valid_weights, axis=0)
+            if _worker_rolling_xcorr:
+                # xcorr-align each neighbor to the initial average before re-averaging,
+                # sharpening bilayer peaks and improving dual Gaussian success rate.
+                shifts_nm = _xcorr_offsets_batch(valid_profs, dat0, _worker_x)
+                shift_samples = np.clip(
+                    np.round(shifts_nm / sample_spacing).astype(int),
+                    -max_shift_samples, max_shift_samples
+                )
+                n_cols = valid_profs.shape[1]
+                col_idx = (np.arange(n_cols)[np.newaxis, :] + shift_samples[:, np.newaxis]) % n_cols
+                aligned_profs = valid_profs[np.arange(len(shift_samples))[:, np.newaxis], col_idx]
+                dat = np.average(aligned_profs, weights=valid_weights, axis=0)
+            else:
+                dat = dat0
 
         # Find initial peak and set up fitting bounds
         ipk = _worker_x[np.argmax(dat)]
@@ -304,6 +399,10 @@ def fit_triangle_chunk_offsets(indices):
     MIN_THICKNESS = 2.0  # nm
     MAX_THICKNESS = 7.0  # nm
 
+    # Sample spacing — constant across all triangles, computed once per chunk
+    sample_spacing = _worker_x[1] - _worker_x[0] if len(_worker_x) > 1 else 1.0
+    max_shift_samples = max(1, int(round(2.0 / sample_spacing)))
+
     results = []
     for i in indices:
         # Get valid neighbors (those within distance bound)
@@ -315,17 +414,41 @@ def fit_triangle_chunk_offsets(indices):
             results.append((0, np.nan, np.nan, 0))
             continue
 
-        # Vectorized weight calculation
         weights = 1.0 / (1.0 + l)
 
-        # Compute weighted average of density profiles
-        dat = np.average(_worker_thickness_arr[neighbors], weights=weights, axis=0) * -1
-        dat = dat - dat.min()
-        dat_sum = dat.sum()
-        if dat_sum == 0:
+        # Invert and normalize each neighbor's profile individually
+        indiv = _worker_thickness_arr[neighbors] * -1
+        mins = indiv.min(axis=1, keepdims=True)
+        indiv = indiv - mins
+        row_sums = indiv.sum(axis=1, keepdims=True)
+        valid_rows = row_sums.flatten() > 0
+        if not np.any(valid_rows):
             results.append((0, np.nan, np.nan, 0))
             continue
-        dat = dat / (80/81 * dat_sum)
+        indiv[valid_rows] /= (80 / 81 * row_sums[valid_rows])
+
+        valid_profs = indiv[valid_rows]
+        valid_weights = weights[valid_rows]
+
+        if _worker_use_xcorr:
+            # xcorr mode: simple weighted average, then match against global reference
+            dat = np.average(valid_profs, weights=valid_weights, axis=0)
+        else:
+            # Gaussian mode: xcorr-align each neighbor profile to the initial average
+            # before re-averaging.  This removes per-triangle positional variation so the
+            # re-averaged profile has sharper bilayer peaks — improving dual Gaussian
+            # success rate in low-SNR regions.
+            dat0 = np.average(valid_profs, weights=valid_weights, axis=0)
+            # Vectorized batch xcorr + roll (no Python loop over neighbors)
+            shifts_nm = _xcorr_offsets_batch(valid_profs, dat0, _worker_x)
+            shift_samples = np.clip(
+                np.round(shifts_nm / sample_spacing).astype(int),
+                -max_shift_samples, max_shift_samples
+            )
+            n_cols = valid_profs.shape[1]
+            col_idx = (np.arange(n_cols)[np.newaxis, :] + shift_samples[:, np.newaxis]) % n_cols
+            aligned_profs = valid_profs[np.arange(len(shift_samples))[:, np.newaxis], col_idx]
+            dat = np.average(aligned_profs, weights=valid_weights, axis=0)
 
         # Cross-correlation mode - use template matching with reference profile
         if _worker_use_xcorr and _worker_reference is not None:
@@ -359,9 +482,16 @@ def fit_triangle_chunk_offsets(indices):
         # Step 1: Try dual Gaussian (unless monolayer mode)
         if not _worker_monolayer:
             try:
-                p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-                bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
-                          [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
+                if _worker_global_fit_params is not None:
+                    # Use global fit parameters for tighter, better-informed initialization
+                    c1_g, w1_g, c2_g, w2_g = _worker_global_fit_params
+                    p0 = [0.02, c1_g, w1_g, 0.02, c2_g, w2_g, 0]
+                    bounds = ([0.005, c1_g - 2, max(0.6, w1_g * 0.5), 0.005, c2_g - 2, max(0.6, w2_g * 0.5), -1],
+                              [0.04,  c1_g + 2, min(2.5, w1_g * 2.0), 0.04,  c2_g + 2, min(2.5, w2_g * 2.0),  1])
+                else:
+                    p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
+                    bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
+                              [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
                 p3, _ = opt.curve_fit(_dual_gaussian, a, b, p0, bounds=bounds)
 
                 # Validate fit

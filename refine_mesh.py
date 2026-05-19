@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import scipy.optimize as opt
 from scipy import spatial
-from collections import defaultdict
 from glob import glob
 from pathlib import Path
 import os
@@ -122,7 +121,7 @@ def build_triangle_to_vertex_mapping(surf):
 
 
 def compute_triangle_offsets(graph, sampling_data, x_positions, average_radius, monolayer=False,
-                              use_xcorr=False):
+                              use_xcorr=False, fallback_offset=None, global_fit_params=None):
     """
     Compute the offset from membrane center for each triangle.
 
@@ -147,6 +146,11 @@ def compute_triangle_offsets(graph, sampling_data, x_positions, average_radius, 
     use_xcorr : bool
         If True, use cross-correlation with global average profile to find
         offsets. More robust to noise but less informative (no sigma values).
+    fallback_offset : float or None
+        If provided, triangles where the Gaussian fit fell back to centroid
+        (method=3) or failed entirely (method=0) will use this value instead
+        of the per-triangle median. Intended for passing the global average
+        midpoint so that poor-fit triangles get a reliable centering correction.
 
     Returns
     -------
@@ -169,18 +173,20 @@ def compute_triangle_offsets(graph, sampling_data, x_positions, average_radius, 
         mode_str = "bilayer (dual Gaussian)"
     print(f"Fitting mode: {mode_str}")
 
-    # Compute reference profile for cross-correlation mode
+    # Compute reference profile for cross-correlation mode.
+    # Use the global average of all normalized profiles as the xcorr reference.
+    # This makes xcorr return LOCAL deviations from the current average position —
+    # i.e., pure local sharpening.  The mean xcorr offset is zero-meaned before
+    # applying to prevent systematic drift.  Global centering is handled separately
+    # by the Gaussian iterations via an explicit dual Gaussian fit.
     reference = None
     if use_xcorr:
         print("  Computing global average profile for cross-correlation...")
-        # Compute global average of all density profiles (normalized)
-        all_profiles = thickness_arr.copy() * -1  # Invert like in worker
+        all_profiles = thickness_arr.copy() * -1
         all_profiles = all_profiles - all_profiles.min(axis=1, keepdims=True)
         row_sums = all_profiles.sum(axis=1, keepdims=True)
-        # Avoid division by zero
         valid_rows = row_sums.flatten() > 0
         all_profiles[valid_rows] = all_profiles[valid_rows] / (80/81 * row_sums[valid_rows])
-        # Average only valid profiles
         reference = np.mean(all_profiles[valid_rows], axis=0)
 
     # Batch KDTree query - query all points at once
@@ -233,7 +239,7 @@ def compute_triangle_offsets(graph, sampling_data, x_positions, average_radius, 
         # Use initializer to share data once per worker
         with ctx.Pool(n_workers, initializer=init_worker,
                       initargs=(thickness_arr, distances, neighbor_indices, x_positions, monolayer,
-                                reference, use_xcorr)) as pool:
+                                reference, use_xcorr, global_fit_params)) as pool:
             chunk_results = list(tqdm(
                 pool.imap(fit_triangle_chunk_offsets, chunks),
                 total=len(chunks),
@@ -271,37 +277,87 @@ def compute_triangle_offsets(graph, sampling_data, x_positions, average_radius, 
 
     # Robust offset processing to prevent divergence
     # 1. Clamp extreme offsets (more than 2x the scan range is clearly wrong)
-    max_reasonable_offset = x_positions[-1]  # Should be close to 0 for centered membrane
+    max_reasonable_offset = x_positions[-1]
     offsets = np.clip(offsets, -max_reasonable_offset, max_reasonable_offset)
 
-    # 2. Replace outlier offsets with local median
-    # Offsets should be centered near 0 for a well-centered membrane
+    # 2. Replace outlier offsets with local median (among good Gaussian fits)
     valid_offsets = offsets[fit_success]
     if len(valid_offsets) > 0:
         median_offset = np.median(valid_offsets)
-        mad = np.median(np.abs(valid_offsets - median_offset))  # Median absolute deviation
-        outlier_threshold = 5 * max(mad, 0.5)  # At least 0.5 nm threshold
+        mad = np.median(np.abs(valid_offsets - median_offset))
+        outlier_threshold = 5 * max(mad, 0.5)
         outliers = np.abs(offsets - median_offset) > outlier_threshold
         n_outliers = np.sum(outliers & fit_success)
         if n_outliers > 0:
             print(f"  Clamped {n_outliers} outlier offsets (>{outlier_threshold:.2f} nm from median)")
             offsets[outliers] = np.clip(offsets[outliers],
-                                         median_offset - outlier_threshold,
-                                         median_offset + outlier_threshold)
+                                        median_offset - outlier_threshold,
+                                        median_offset + outlier_threshold)
 
-    # 3. Only truly failed fits (method=0) get median offset
-    # Centroid results (method=3) already have valid offsets
-    if len(valid_offsets) > 0:
-        truly_failed = (fit_methods == 0)
-        offsets[truly_failed] = median_offset
+    # 3. Triangles with failed or centroid-fallback fits get neighbor interpolation.
+    # Interpolate offsets from nearby triangles that DID fit successfully, weighted
+    # by distance.  This preserves local spatial structure (the bilayer may genuinely
+    # be at different positions in different regions) better than a single global value.
+    # Fall back to global midpoint (or per-triangle median) only when there are no
+    # good-fit neighbors within 2× average_radius.
+    needs_replacement = (fit_methods == 0) | (fit_methods == 3)
+    n_replaced = np.sum(needs_replacement)
+    if n_replaced > 0 and np.any(fit_success):
+        final_fallback = fallback_offset if fallback_offset is not None else (median_offset if len(valid_offsets) > 0 else 0.0)
+        good_indices = np.where(fit_success)[0]
+        bad_indices = np.where(needs_replacement)[0]
+        good_xyz = xyz[good_indices]
+        good_offsets = offsets[good_indices]
+        bad_xyz = xyz[bad_indices]
 
-    # 4. For xcorr iterations, zero-mean the offsets.
-    # The xcorr reference is the average of raw per-triangle profiles, while each
-    # local comparison uses a spatially-averaged (smoother) profile.  That shape
-    # mismatch introduces a constant systematic bias (especially on small, curved
-    # structures like vesicles).  Since global centering is handled by the
-    # Gaussian iterations, xcorr should only apply *local* corrections — zero-
-    # meaning removes the systematic drift while preserving relative sharpening.
+        # Build tree from good-fit triangles and query up to 2× average_radius
+        good_tree = spatial.cKDTree(good_xyz)
+        k = min(20, len(good_indices))
+        interp_dists, interp_local_idx = good_tree.query(
+            bad_xyz, k=k, distance_upper_bound=2 * average_radius
+        )
+        if k == 1:
+            interp_dists = interp_dists[:, np.newaxis]
+            interp_local_idx = interp_local_idx[:, np.newaxis]
+
+        n_no_neighbor = 0
+        for j, tri_idx in enumerate(bad_indices):
+            valid = interp_dists[j] != np.inf
+            if np.any(valid):
+                w = 1.0 / (1.0 + interp_dists[j][valid])
+                offsets[tri_idx] = np.average(good_offsets[interp_local_idx[j][valid]], weights=w)
+            else:
+                offsets[tri_idx] = final_fallback
+                n_no_neighbor += 1
+
+        fallback_src = f"global midpoint {final_fallback:+.3f} nm" if fallback_offset is not None else f"median {final_fallback:+.3f} nm"
+        print(f"  Interpolated {n_replaced - n_no_neighbor} centroid/failed fits from good neighbors; "
+              f"{n_no_neighbor} used {fallback_src}")
+    elif n_replaced > 0:
+        # No good fits at all — use final fallback for everything
+        final_fallback = fallback_offset if fallback_offset is not None else 0.0
+        offsets[needs_replacement] = final_fallback
+        print(f"  No good fits available; replaced {n_replaced} with global midpoint {final_fallback:+.3f} nm")
+
+    # 4a. For Gaussian iterations: center the offset field on the global midpoint.
+    # Per-triangle dual Gaussian fits underestimate the global centering correction
+    # because locally-averaged profiles are biased by the current surface offset — the
+    # local fits converge to small values relative to the true global shift needed.
+    # Fix: decompose offset_i = global_midpoint + (local_offset_i - mean(local_offsets))
+    # This forces the mean correction to match the global midpoint (explicit centering)
+    # while preserving local variation structure above the mean.
+    if not use_xcorr and fallback_offset is not None:
+        local_mean = np.mean(offsets)
+        offsets = fallback_offset + (offsets - local_mean)
+        print(f"  Global centering: mean {local_mean:+.3f} → {fallback_offset:+.3f} nm "
+              f"(Δ={fallback_offset - local_mean:+.3f} nm, preserving local variation)")
+
+    # 4b. Zero-mean xcorr offsets to remove systematic bias.
+    # The xcorr reference is the global average of raw per-triangle profiles, while
+    # each local comparison uses a spatially-averaged profile.  That shape mismatch
+    # (and any global offset of the surface) introduces a constant bias in all xcorr
+    # offsets.  Zero-meaning makes xcorr purely local sharpening — global centering
+    # is handled by the Gaussian iterations via explicit dual Gaussian fit.
     if use_xcorr:
         xcorr_mask = fit_methods == 4
         if np.any(xcorr_mask):
@@ -378,39 +434,38 @@ def laplacian_smooth_mesh(surf, iterations=1, lambda_factor=0.5):
     vtkPolyData
         Smoothed surface
     """
-    # Build vertex adjacency from mesh connectivity
+    from scipy.sparse import csr_matrix, diags
+    from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
+
     n_points = surf.GetNumberOfPoints()
     points = surf.GetPoints()
 
-    # Get all vertex positions
-    positions = np.array([points.GetPoint(i) for i in range(n_points)])
+    positions = vtk_to_numpy(points.GetData()).astype(np.float64)
 
-    # Build adjacency list from cells
-    adjacency = [set() for _ in range(n_points)]
+    # Build sparse normalized adjacency matrix from cell connectivity.
+    # Each triangle contributes 6 directed edges (3 pairs of corner vertices).
+    rows, cols = [], []
     for cell_idx in range(surf.GetNumberOfCells()):
         cell = surf.GetCell(cell_idx)
         pt_ids = [cell.GetPointId(j) for j in range(cell.GetNumberOfPoints())]
-        for j, pt_id in enumerate(pt_ids):
-            for k, other_id in enumerate(pt_ids):
+        for j in range(len(pt_ids)):
+            for k in range(len(pt_ids)):
                 if j != k:
-                    adjacency[pt_id].add(other_id)
+                    rows.append(pt_ids[j])
+                    cols.append(pt_ids[k])
+    rows = np.array(rows, dtype=np.int32)
+    cols = np.array(cols, dtype=np.int32)
+    adj = csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(n_points, n_points))
+    row_sums = np.asarray(adj.sum(axis=1)).flatten()
+    L = diags(1.0 / np.maximum(row_sums, 1e-10)) @ adj  # row-normalized: L[i,j] = 1/degree
 
-    # Iterative Laplacian smoothing
+    # Iterative Laplacian smoothing: one sparse matmul per iteration
     for _ in range(iterations):
-        new_positions = positions.copy()
-        for i in range(n_points):
-            neighbors = list(adjacency[i])
-            if len(neighbors) > 0:
-                # Compute centroid of neighbors
-                neighbor_positions = positions[neighbors]
-                centroid = np.mean(neighbor_positions, axis=0)
-                # Move toward centroid
-                new_positions[i] = positions[i] + lambda_factor * (centroid - positions[i])
-        positions = new_positions
+        positions = positions + lambda_factor * (L @ positions - positions)
 
-    # Update mesh points
-    for i in range(n_points):
-        points.SetPoint(i, positions[i])
+    # Write back using bulk VTK update
+    new_pts = numpy_to_vtk(positions.astype(np.float32), deep=True)
+    points.SetData(new_pts)
 
     return surf
 
@@ -450,45 +505,60 @@ def apply_vertex_displacements(surf, triangle_vertices, offsets, normals, dampin
     np.ndarray
         Array of displacement magnitudes for each vertex
     """
-    # Collect impulses for each vertex from attached triangles
-    vertex_impulses = defaultdict(list)
+    from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
-    for tri_idx, vert_ids in triangle_vertices.items():
-        # Impulse = offset * normal vector
-        impulse = offsets[tri_idx] * normals[:, tri_idx]
-        for vertex_id in vert_ids:
-            vertex_impulses[vertex_id].append(impulse)
-
-    # Apply damped averaged impulses to each vertex
     points = surf.GetPoints()
-    displacements = np.zeros(points.GetNumberOfPoints())
-    n_clamped_iter = 0
+    n_vertices = points.GetNumberOfPoints()
+
+    # Build (n_tri, 3) vertex-index array from the triangle→vertex dict.
+    # triangle_vertices covers all indices 0..n_tri-1 with exactly 3 ids each.
+    n_tri = len(triangle_vertices)
+    tri_vert_arr = np.array([triangle_vertices[i] for i in range(n_tri)], dtype=np.int32)
+    # tri_vert_arr: (n_tri, 3)
+
+    # Compute per-triangle impulse vectors: offsets * normals (n_tri, 3)
+    impulses = offsets[:, None] * normals.T  # (n_tri, 3)
+
+    # Accumulate impulse sums and counts per vertex via advanced indexing.
+    # Each triangle contributes its impulse to 3 vertices.
+    impulse_sums = np.zeros((n_vertices, 3))
+    counts = np.zeros(n_vertices)
+    flat_verts = tri_vert_arr.ravel()                  # (n_tri*3,)
+    flat_impulses = np.repeat(impulses, 3, axis=0)     # (n_tri*3, 3)
+    np.add.at(impulse_sums, flat_verts, flat_impulses)
+    np.add.at(counts, flat_verts, 1)
+
+    avg_impulses = impulse_sums / np.maximum(counts, 1)[:, None] * damping_factor
+
+    # Vectorized per-iteration clamping
+    mags = np.linalg.norm(avg_impulses, axis=1)
+    clamp_iter = mags > max_displacement
+    n_clamped_iter = int(clamp_iter.sum())
+    if n_clamped_iter:
+        scale = max_displacement / mags[clamp_iter]
+        avg_impulses[clamp_iter] *= scale[:, None]
+
+    # Bulk-read current positions via shared numpy view
+    old_positions = vtk_to_numpy(points.GetData()).astype(np.float64)
+    new_positions = old_positions + avg_impulses
+
+    # Vectorized total-offset clamping
     n_clamped_total = 0
+    if original_positions is not None and max_total_offset is not None:
+        total_disp = new_positions - original_positions
+        total_mags = np.linalg.norm(total_disp, axis=1)
+        clamp_total = total_mags > max_total_offset
+        n_clamped_total = int(clamp_total.sum())
+        if n_clamped_total:
+            scale = max_total_offset / total_mags[clamp_total]
+            new_positions[clamp_total] = (original_positions[clamp_total]
+                                          + total_disp[clamp_total] * scale[:, None])
 
-    for vertex_id, impulses in vertex_impulses.items():
-        avg_impulse = np.mean(impulses, axis=0) * damping_factor
+    displacements = np.linalg.norm(new_positions - old_positions, axis=1)
 
-        # Clamp per-iteration displacement magnitude
-        displacement_mag = np.linalg.norm(avg_impulse)
-        if displacement_mag > max_displacement:
-            avg_impulse = avg_impulse * (max_displacement / displacement_mag)
-            n_clamped_iter += 1
-
-        old_pos = np.array(points.GetPoint(vertex_id))
-        new_pos = old_pos + avg_impulse
-
-        # Clamp total displacement from original surface
-        if original_positions is not None and max_total_offset is not None:
-            orig_pos = original_positions[vertex_id]
-            total_displacement = new_pos - orig_pos
-            total_mag = np.linalg.norm(total_displacement)
-            if total_mag > max_total_offset:
-                # Scale back to max_total_offset from original
-                new_pos = orig_pos + total_displacement * (max_total_offset / total_mag)
-                n_clamped_total += 1
-
-        points.SetPoint(vertex_id, new_pos)
-        displacements[vertex_id] = np.linalg.norm(new_pos - old_pos)
+    # Bulk-write updated positions back to VTK
+    new_pts = numpy_to_vtk(new_positions.astype(np.float32), deep=True)
+    points.SetData(new_pts)
 
     if n_clamped_iter > 0:
         print(f"  Clamped {n_clamped_iter} vertices to max per-iteration displacement of {max_displacement} nm")
@@ -500,7 +570,10 @@ def apply_vertex_displacements(surf, triangle_vertices, offsets, normals, dampin
 
 def recompute_normals(surf):
     """
-    Recompute surface normals after vertex displacement.
+    Recompute surface normals after vertex displacement, stripping stale cell/point data.
+
+    Removes all non-geometry arrays (curvature values, areas, etc. from prior pycurv
+    output) so the saved VTP contains only updated geometry and fresh normals.
 
     Parameters
     ----------
@@ -510,8 +583,16 @@ def recompute_normals(surf):
     Returns
     -------
     vtkPolyData
-        Surface with recomputed normals
+        Surface with recomputed normals and no stale auxiliary data
     """
+    # Strip all stale cell and point data arrays before recomputing normals.
+    # When surf was loaded from a pycurv AVV output, it carries curvature arrays
+    # (kappa1, kappa2, area, etc.) that become stale after vertex displacement.
+    for data in (surf.GetCellData(), surf.GetPointData()):
+        names = [data.GetArrayName(i) for i in range(data.GetNumberOfArrays())]
+        for name in names:
+            data.RemoveArray(name)
+
     normals_filter = vtk.vtkPolyDataNormals()
     normals_filter.SetInputData(surf)
     normals_filter.ComputePointNormalsOn()
@@ -561,9 +642,18 @@ def run_pycurv_refinement(vtp_file, output_base, pixel_size, radius_hit, cores=6
     if vtp_file_resolved != surface_vtp_resolved:
         shutil.copy(vtp_file, surface_vtp)
 
-    # Delete any stale cached scaled_cleaned files so pycurv rebuilds the graph
-    # from the newly displaced surface rather than reusing an old cached graph.
-    for ext in [".scaled_cleaned.gt", ".scaled_cleaned.vtp"]:
+    # Delete all stale pycurv cached files so pycurv rebuilds from the newly
+    # displaced surface rather than reusing any old cached graphs.
+    # Must include NVV_rh*.gt and AVV_rh*.gt: pycurv skips NVV if NVV_rh*.gt
+    # exists, and uses that stale graph for curvature estimation, which then
+    # propagates wrong normals into the next iteration's profile sampling.
+    stale_exts = [
+        ".scaled_cleaned.gt", ".scaled_cleaned.vtp",
+        f".NVV_rh{radius_hit}.gt",
+        f".AVV_rh{radius_hit}.gt", f".AVV_rh{radius_hit}.vtp",
+        f".AVV_rh{radius_hit}.csv", f".AVV_rh{radius_hit}_sampling.csv",
+    ]
+    for ext in stale_exts:
         stale = f"{output_dir}{basename}{ext}"
         if os.path.exists(stale):
             os.remove(stale)
@@ -730,6 +820,7 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
     global_center_offset = np.nan
     global_sigma1 = np.nan
     global_sigma2 = np.nan
+    global_fit_params = None
     if not use_xcorr:
         print("Fitting dual Gaussian to global average profile for centering...")
         all_profiles_raw = value_array * -1
@@ -754,6 +845,7 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
                 global_center_offset = (popt_g[1] + popt_g[4]) / 2
                 global_sigma1 = popt_g[2]
                 global_sigma2 = popt_g[5]
+                global_fit_params = (popt_g[1], popt_g[2], popt_g[4], popt_g[5])
                 print(f"  Global avg profile: c1={popt_g[1]:.3f} nm, c2={popt_g[4]:.3f} nm, "
                       f"midpoint={global_center_offset:+.3f} nm, "
                       f"thickness={abs(popt_g[4] - popt_g[1]):.3f} nm")
@@ -762,21 +854,21 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
         except Exception as e:
             print(f"  Global avg profile dual Gaussian fit failed: {e}")
 
-    # Compute triangle offsets from density profiles
+    # Compute triangle offsets from density profiles.
+    # For Gaussian iterations: run per-triangle dual Gaussian fitting with the
+    # global average midpoint as a reliable fallback for poor-fit triangles.
+    # Xcorr sharpening in earlier iterations should have made the bilayer peaks
+    # visible enough to fit, but any triangle that falls back to centroid or
+    # fails entirely gets the global midpoint instead of a noisy per-triangle guess.
     print("Computing triangle offsets from density profiles...")
-    if not use_xcorr and not np.isnan(global_center_offset):
-        # Use the reliable global average midpoint as a uniform offset for every triangle
-        num_triangles = len(sampling_data)
-        offsets = np.full(num_triangles, global_center_offset)
-        sigmas1 = np.full(num_triangles, global_sigma1)
-        sigmas2 = np.full(num_triangles, global_sigma2)
-        print(f"  Using global midpoint {global_center_offset:+.3f} nm for all {num_triangles} triangles")
-    else:
-        # Fallback: per-triangle fitting (xcorr iterations, or if global fit failed)
-        offsets, sigmas1, sigmas2 = compute_triangle_offsets(
-            tg.graph, sampling_data, x_positions, average_radius, monolayer=monolayer,
-            use_xcorr=use_xcorr
-        )
+    gaussian_fallback = global_center_offset if (not use_xcorr and not np.isnan(global_center_offset)) else None
+    if gaussian_fallback is not None:
+        print(f"  Global avg midpoint {gaussian_fallback:+.3f} nm available as fallback for poor fits")
+    offsets, sigmas1, sigmas2 = compute_triangle_offsets(
+        tg.graph, sampling_data, x_positions, average_radius, monolayer=monolayer,
+        use_xcorr=use_xcorr, fallback_offset=gaussian_fallback,
+        global_fit_params=global_fit_params
+    )
 
     # Get normal vectors and coordinates from graph
     normals = tg.graph.vp.n_v.get_2d_array([0, 1, 2])
@@ -1070,6 +1162,7 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
         laplacian_lambda = refinement_config.get("laplacian_lambda", 0.3)
     if lowpass_sigma is None:
         lowpass_sigma = refinement_config.get("lowpass_sigma", 0)
+    convergence_threshold = refinement_config.get("convergence_threshold", None)
 
     # Find files to process
     if component:
@@ -1110,6 +1203,8 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
         print(f"  Laplacian smoothing: {laplacian_iterations} iterations, lambda={laplacian_lambda}")
     if lowpass_sigma > 0:
         print(f"  Low-pass filter: sigma={lowpass_sigma} nm (applied to tomogram)")
+    if convergence_threshold is not None:
+        print(f"  Convergence threshold: {convergence_threshold} nm (early stop per phase)")
     print(f"  Components: {components}")
 
     os.makedirs(output_dir, exist_ok=True)
@@ -1171,6 +1266,7 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                 print(f"  Stored {n_vertices} original vertex positions for offset limiting")
 
                 iteration_stats = []
+                xcorr_phase_converged = False  # True when xcorr iters can be skipped
 
                 # Sample initial profile (before any refinement) for comparison
                 print("\n=== Initial profile (before refinement) ===")
@@ -1302,6 +1398,13 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                         average_radius_min
                     )
 
+                    iter_use_xcorr = iter_num in xcorr_iterations
+
+                    # Skip remaining xcorr iterations if xcorr phase already converged.
+                    # Gaussian iterations are never skipped this way — they must run for pycurv output.
+                    if xcorr_phase_converged and iter_use_xcorr:
+                        continue
+
                     print(f"\n=== Iteration {iter_num}/{iterations} ===")
                     if average_radius_decay < 1.0:
                         print(f"  Averaging radius: {current_avg_radius:.2f} nm")
@@ -1310,7 +1413,6 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                     iter_output_base = f"{output_dir}{basename}_refined_iter{iter_num}"
 
                     # Run refinement iteration
-                    iter_use_xcorr = iter_num in xcorr_iterations
                     if 0 < len(xcorr_iterations) < iterations:
                         method_label = "xcorr" if iter_use_xcorr else "dual Gaussian"
                         print(f"  Fitting method this iteration: {method_label}")
@@ -1412,6 +1514,24 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
                         original_positions = np.array(
                             [check_surf.GetPoints().GetPoint(i) for i in range(new_n)]
                         )
+
+                    # Early stopping check.
+                    # XCorr phase: if converged, skip remaining xcorr iters but continue
+                    # to Gaussian phase (which must run for pycurv curvature output).
+                    # Gaussian phase: if converged, stop entirely (pycurv already ran).
+                    mean_offset = stats.get('mean_offset', np.nan)
+                    if (convergence_threshold is not None
+                            and not np.isnan(mean_offset)
+                            and mean_offset < convergence_threshold):
+                        remaining_xcorr = [i for i in sorted(xcorr_iterations) if i > iter_num]
+                        if iter_use_xcorr and remaining_xcorr:
+                            print(f"  XCorr converged (|offset|={mean_offset:.3f} nm < {convergence_threshold:.3f} nm). "
+                                  f"Skipping {len(remaining_xcorr)} remaining xcorr iteration(s).")
+                            xcorr_phase_converged = True
+                        elif not iter_use_xcorr:
+                            print(f"  Converged (|offset|={mean_offset:.3f} nm < {convergence_threshold:.3f} nm). "
+                                  f"Stopping early after iteration {iter_num}.")
+                            break
 
                 # Save iteration statistics (full, including iteration 0)
                 stats_df_full = pd.DataFrame(iteration_stats)

@@ -115,37 +115,25 @@ def interpolate(data, data_matrix, xyz, n_v, sample_spacing=0.25, angstroms=Fals
     ndarray
         Interpolated values array (n_triangles x nsamples)
     """
-    averages = []
-    # Calculate number of samples from spacing and range
     nsamples = int(2 * scan_range / sample_spacing) + 1
-    # Create an array of nm steps from -scan_range to +scan_range
     samples = np.linspace(-scan_range, scan_range, nsamples)
     if angstroms:
-        samples = samples*10.
-    # Create an empty array to store the interpolated values
-    value_array = np.empty((len(n_v[0]),len(samples)))
-    # Iterate through the normal vectors
-    for i in range(len(n_v[0])):
-        # print(i)
-        # Create an empty array to store the interpolated values for each normal vector
-        value_array_temp = np.array((samples))
-        # Iterate through the nm steps
-            # Interpolate the mrc data along the normal vector
-            # skip = False
+        samples = samples * 10.
 
-        locindices = [xyz[:,i]+j*n_v[:,i] for j in samples]
-            # for k in [0,1,2]:
-            #     if locindex[k]>(data.shape[k]-1):
-            #         print(f"Out of bounds: {locindex}")
-            #         value_array_temp[idx] = np.nan
-            #         skip = True
-            # if not skip:
-        value_array_temp = interp.interpn(data_matrix,data,locindices, method="linear", bounds_error=False, fill_value=None)
-        averages.append(value_array_temp[nsamples // 2])
-        # Store the interpolated values for each normal vector
-        # print(value_array_temp)
-        value_array[i] = value_array_temp
-    print(np.mean(averages))
+    # Build all query points in one vectorized step.
+    # xyz: (3, n_tri), n_v: (3, n_tri), samples: (nsamples,)
+    # all_points[s, i, :] = xyz[:, i] + samples[s] * n_v[:, i]
+    n_tri = xyz.shape[1]
+    all_points = xyz.T[None, :, :] + samples[:, None, None] * n_v.T[None, :, :]
+    # shape: (nsamples, n_tri, 3) → flatten to (nsamples*n_tri, 3)
+    all_points_flat = all_points.reshape(-1, 3)
+
+    values_flat = interp.interpn(data_matrix, data, all_points_flat,
+                                 method="linear", bounds_error=False, fill_value=None)
+    # reshape (nsamples, n_tri) then transpose to (n_tri, nsamples)
+    value_array = values_flat.reshape(nsamples, n_tri).T
+
+    print(np.mean(value_array[:, nsamples // 2]))
     print(value_array.shape)
     print(xyz.shape)
     return value_array
