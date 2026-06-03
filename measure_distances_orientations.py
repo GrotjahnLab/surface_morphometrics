@@ -27,9 +27,14 @@ import yaml
 import intradistance_verticality
 import interdistance_orientation
 
+# Check for -f flag
+force = "-f" in argv
+if force:
+    argv.remove("-f")
+
 # Check for a config file
 if len(argv) < 2:
-    print("Usage: python measure_distances_orientations.py config.yml [segmentation.mrc]")
+    print("Usage: python measure_distances_orientations.py [-f] config.yml [segmentation.mrc]")
     exit()
 
 # Check for a data dir and a work dir

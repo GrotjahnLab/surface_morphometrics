@@ -13,14 +13,18 @@ using pycurv's vector voting framework, and tools to convert these morphological
 
 
 ## Installation Options:
-
-## Option 1 (Recommended): Conda Installation
+## Option 1: Native Installation through Conda
+_This is the fastest and easiest starting point for most linux boxes, and now for mac as well_
 1. Clone this git repository: `git clone https://github.com/grotjahnlab/surface_morphometrics.git`
 2. Install the conda environment: `conda env create -f environment.yml`
 3. Activate the conda environment: `conda activate morphometrics`
+
 Note: Older ubuntu installs (and probably some other linux distributions!) have some known issues with graph-tool. If you run into issues with the main environment file, try using `environment-ubuntu.yml` instead. This worked on my Ubuntu 22.04 LTS box.
 
-## Option 2: Using Docker  (Recommended if you have issues with dependencies on your machine)
+
+
+## Option 2: Docker Container
+_This allows operation on windows and other operating systems where graph-tool or pymeshlab do not play nice with each other or with conda._
 1. Clone this git repository: 
 ```bash
 git clone https://github.com/grotjahnlab/surface_morphometrics.git
@@ -152,17 +156,18 @@ Individual steps are available as click commands in the terminal, and as functio
 ## File Descriptions:
 * Files with.xyz extension are point clouds converted, in nm or angstrom scale. This is a flat text file with `X Y Z` coordinates in each line.
 * Files with .ply extension are the surface meshes (in a binary format), which will be scaled in nm or angstrom scale, and work in many different softwares, including [Meshlab](https://www.meshlab.net/). 
-* Files with surface.vtp extension are the same surface meshes in the [VTK](https://vtk.org/) format.
+* Files with .vtp extension are the same surface meshes in the [VTK](https://vtk.org/) format.
         * The .surface.vtp files are a less cross-compatible format, so you can't use them with as many types of software, but they are able to store all the fun quantifications you'll do!. [Paraview](https://www.paraview.org/) or [pyvista](https://docs.pyvista.org/) can load this format. This is the format pycurv reads to build graphs.
+        * The .AVV_rh8.vtp files are those output from downstream components of the pipeline, and generally have the most available visualizations in paraview and pyvista. 
 * Files with .gt extension are triangle graph files using the `graph-tool` python toolkit. These graphs enable rapid neighbor-wise operations such as tensor voting, but are not especially useful for manual inspection.
 * Files with .csv extension are quantification outputs per-triangle. These are the files you'll use to generate statistics and plots.
 * Files with .log extension are log files, mostly from the output of the pycurv run.
 * Quantifications (plots and statistical tests) are output in csv, svg, and png formats. 
 
 ## Troubleshooting
-0. If installation fails, you may want to reference `Install.md` for advanced installation tips (this is especially relevant for M1/M2 macs and Centos7 linux machines)
-1. Warnings of the type `Gaussian or Mean curvature of X has a large computation error`... can be ignored, as they get cleaned up by pycurv
-2. MRC files that are output by AMIRA don't have proper machine stamps by default. They need to be imported with `mrcfile.open(filename, permissive=True)` 
+1. Warnings of the type `Gaussian or Mean curvature of X has a large computation error`... can be ignored, as they get cleaned up by pycurv. These warnings are now suppressed by default.
+2. MRC files that are output by AMIRA don't have proper machine stamps by default. They need to be imported with `mrcfile.open(filename, permissive=True)`. This is also true for many other softwares, including Dragonfly.
+3. Pycurv has recently undergone significant performance improvements and has more feedback; if it seems to be hanging indefinitely, try setting cores to 1 in the config file.
 
 ## Dependencies
 1. Numpy
@@ -183,6 +188,11 @@ The development of this toolkit and examples of useful applications can be found
 > **Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline.**
 > Benjamin A. Barad<sup>†</sup>, Michaela Medina<sup>†</sup>, Daniel Fuentes, R. Luke Wiseman, Danielle A. Grotjahn
 > *Journal of Cell Biology* 2023, 222(4), e202204093; doi: https://doi.org/10.1083/jcb.202204093
+
+Thickness measurement is described in this manuscript:
+> **Surface Morphometrics reveals local membrane thickness variation in organellar subcompartments.**
+> Michaela Medina<sup>†</sup>, Ya-Ting Chang<sup>†</sup>, Hamidreza Rahmani, Mark Frank, Zidan Khan, Daniel Fuentes, Frederick A. Heberle, M. Neal Waxham, Benjamin A. Barad<sup>✉</sup>, Danielle A. Grotjahn<sup>✉</sup>.
+> *Journal of Cell Biology* 2025, 225(3), e202505059, doi:  https://doi.org/10.1083/jcb.202505059
 
 All scientific software is dependent on other libraries, but the surface morphometrics toolkit is particularly dependent on [PyCurv](https://github.com/kalemaria/pycurv), which provides the vector voted curvature measurements and the triangle graph framework. As such, please also cite the pycurv manuscript:
 

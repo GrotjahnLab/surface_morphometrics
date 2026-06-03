@@ -305,6 +305,12 @@ def new_workflow(
                 threshold=min_component, purge=True, verbose=True)
             print('The graph has {} vertices and {} edges'.format(
                 tg.graph.num_vertices(), tg.graph.num_edges()))
+            if tg.graph.num_vertices() == 0:
+                raise pexceptions.PySegInputError(
+                    expr="new_workflow",
+                    msg="The graph is empty after filtering small components! "
+                        "The surface may be too small or entirely below the "
+                        "min_component threshold ({}).".format(min_component))
 
         # Saving the scaled (and cleaned) graph and surface:
         print('Saving cleaned graph and surface...', file=sys.stderr)

@@ -10,7 +10,7 @@ Two usage options:
   run_pycurv.py config.yml mesh.vtp
 2. Run pycurv on all meshes in the working directory:
  segmentation_to_meshes.py config.yml
- 
+
 Because pycurv is quite resource intensive, it is recommended to use option 1 with a cluster submission script in parallel, rather than sequentially running all vtp files.
 """
 
@@ -18,17 +18,26 @@ __author__ = "Benjamin Barad"
 __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
-from sys import argv
+# Set OMP_NUM_THREADS=1 before any imports to prevent OpenMP + fork deadlocks
+# when graph-tool is used with multiprocessing
 import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
+from sys import argv
 import glob
 
 import yaml
 
 import curvature
 
+# Check for -f flag
+force = "-f" in argv
+if force:
+    argv.remove("-f")
+
 # Check for a config file
 if len(argv) < 2:
-    print("Usage: run_pycurv.py config.yml [filename.surface.vtp]")
+    print("Usage: run_pycurv.py [-f] config.yml [filename.surface.vtp]")
     exit()
 
 # Check for a data dir and a work dir
@@ -42,15 +51,27 @@ with open(argv[1]) as file:
             print("No working directory is specified in the config file. The data directory will be used for input and output.")
             config["work_dir"] = config["seg_dir"]
 
+# Warn if configured cores exceed logical cores
+cores = config["cores"]
+logical_cores = os.cpu_count()
+if cores > logical_cores:
+    print(f"WARNING: Configured cores ({cores}) exceeds the number of logical cores ({logical_cores}).")
+    print("This may cause performance degradation due to oversubscription.")
+    if not force:
+        answer = input("Continue anyway? [y/n] ")
+        if answer != "y":
+            exit()
+
 # Figure out what files will be run
 if len(argv) == 2:
     print("No input file specified - will run on all VTP files in the data directory")
     print("This may take a very long time - pycurv can take over an hour to run on a single mesh")
     print("It is recommended to run in parallel with a cluster submission script for individual files")
     print("Recommended usage: run_pycurv.py config.yml <meshname.surface.vtp>")
-    answer = input("Continue? [y/n]")
-    if answer != "y":
-        exit()
+    if not force:
+        answer = input("Continue? [y/n]")
+        if answer != "y":
+            exit()
     mesh_files = glob.glob(config["work_dir"]+"*.surface.vtp")
     mesh_files = [os.path.basename(f) for f in mesh_files]
 else:
@@ -61,14 +82,25 @@ else:
 if not os.path.isdir(config["work_dir"]):
     os.mkdir(config["work_dir"])
 
-for surface in mesh_files:
-    print("Processing "+surface)
-    curvature.run_pycurv(surface, config["work_dir"],
-                        scale=1.0,
-                        radius_hit=config["curvature_measurements"]["radius_hit"],
-                        min_component=config["curvature_measurements"]["min_component"],
-                        exclude_borders=config["curvature_measurements"]["exclude_borders"],
-                        cores=config["cores"])
+failed_surfaces = []
+for i, surface in enumerate(mesh_files):
+    print("Processing {} ({}/{})".format(surface, i+1, len(mesh_files)))
+    try:
+        curvature.run_pycurv(surface, config["work_dir"],
+                            scale=1.0,
+                            radius_hit=config["curvature_measurements"]["radius_hit"],
+                            min_component=config["curvature_measurements"]["min_component"],
+                            exclude_borders=config["curvature_measurements"]["exclude_borders"],
+                            cores=config["cores"])
+        print("Completed {}\n".format(surface))
+    except Exception as e:
+        print("WARNING: Skipping {} due to error: {}\n".format(surface, e))
+        failed_surfaces.append(surface)
+
+if failed_surfaces:
+    print("The following surfaces failed and were skipped:")
+    for s in failed_surfaces:
+        print("  - {}".format(s))
 
     
 print("-------------------------------------------------------")

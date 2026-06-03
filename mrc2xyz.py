@@ -37,10 +37,12 @@ def mrc_to_xyz(input, output, label, angstrom):
 		voxel_size = mrc.voxel_size.x
 		origin = mrc.header.origin.x, mrc.header.origin.y, mrc.header.origin.z
 	else:
-		voxel_size = mrc.voxel_size.x/10 # nm
-		origin = mrc.header.origin.x/10, mrc.header.origin.y/10, mrc.header.origin.z/10
+		voxel_size = mrc.voxel_size.x/10. # nm
+		origin = mrc.header.origin.x/10., mrc.header.origin.y/10., mrc.header.origin.z/10.
 	print(voxel_size, origin)
-	 
+	if mrc.voxel_size.x == 1.0:
+		print(f"[WARNING] Voxel size is 1.0 angstrom for {input} - this likely means the pixel size was not set correctly in the segmentation or denoising steps.")
+
 	data = np.where(mrc.data == label)
 	if len(data[0]) == 0:
 		print("No data found for label {}".format(label))

@@ -222,7 +222,7 @@ def ks_statistics(datasets, areas, ns, condition_names, morph_names, basename, f
                 f.write(f"{basename},KS,{condition_names[i]},{morph_names[i]},{condition_names[j]},{morph_names[j]},{ks},{p},{p_en},{p_rad}\n")
                 
 
-def statistics(datasets, basename,  condition_names, morph_names, test_type="median", filename="test.csv", figsize=(5,4), ylabel="Peak Value"):
+def statistics(datasets, basename,  condition_names, morph_names, test_type="median", filename="test.csv", figsize=(5,4), ylabel="Peak Value", custom_colors=None, separator_after=None):
     """Generate mann-whitney U test and violin plots for a set of datasets.
     Args:
         datasets (list): list of datasets to compare
@@ -233,7 +233,11 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
         filename (str): name of the output file
         figsize (tuple): size of the figure
         ylabel (str): label of the y axis
+        custom_colors (list): optional list of colors for each violin. Defaults to module colors.
+        separator_after (int): if set, draw a light grey dashed vertical line after this violin
+            index (1-based), e.g. separator_after=2 draws a line between violins 2 and 3.
         """
+    _colors = custom_colors if custom_colors is not None else colors
     raw_filename = filename[:-10]+"rawstats.csv"
     with open(raw_filename, 'w') as raw_file:
         raw_file.write(basename+f" - {test_type}\n")
@@ -275,7 +279,12 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     figure_filename = filename[:-3]+"svg"
     fig,ax=plt.subplots(figsize=figsize)
     ax.set_title(basename)
-    ax.violinplot(datasets, showmeans=True)
+    parts = ax.violinplot(datasets, showmeans=True)
+    for i, pc in enumerate(parts['bodies']):
+        pc.set_facecolor(list(_colors[i][:3]) + [0.4])
+        pc.set_edgecolor(_colors[i])
+    if separator_after is not None:
+        ax.axvline(x=separator_after + 0.5, color='lightgrey', linestyle='--', linewidth=1.5, zorder=0)
     ax.set_xticks(range(1,len(datasets)+1))
     ax.set_xticklabels([condition_names[i]+"\n"+morph_names[i] for i in range(len(condition_names))])
     ax.set_ylabel(ylabel)
@@ -284,7 +293,7 @@ def statistics(datasets, basename,  condition_names, morph_names, test_type="med
     fig.savefig(figure_filename[:-3]+"png")
 
 
-def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(6,4), logx=False, vlines = True, legend=True, color_offset=0):
+def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, range=None, figsize=(6,4), logx=False, vlines = True, legend=True, color_offset=0, custom_colors=None, custom_colors_light=None):
     """Construct an area-weighted histogram of the data.
     Args:
         data (array-like): list of arrays to be independently plotted.
@@ -300,7 +309,11 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         vlines (bool): whether to plot vertical lines at the histogram peaks.
         legend (bool): whether to show a legend. Default True.
         color_offset (int): offset for the color of the histogram. Default 0. Used for some weird side cases
+        custom_colors (list): optional list of colors overriding the module defaults.
+        custom_colors_light (list): optional list of light colors overriding the module defaults.
         """
+    _colors       = custom_colors       if custom_colors       is not None else colors
+    _colors_light = custom_colors_light if custom_colors_light is not None else colors_light
     assert len(data)==len(areas)
     assert len(data)==len(labels)
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
@@ -308,12 +321,11 @@ def histogram(data, areas, labels, title, xlabel, filename="hist.svg", bins=50, 
         bins = np.logspace(np.log10(range[0]),np.log10(range[1]), bins)
         ax.set_xscale("log")
     for index, value in enumerate(data):
-        n,binset,_ = ax.hist(value, bins=bins, weights=areas[index], label=labels[index], ec=colors[index],fc=colors_light[index],histtype="stepfilled", density=True, range = range) #
-        if vlines: 
+        n,binset,_ = ax.hist(value, bins=bins, weights=areas[index], label=labels[index], ec=_colors[index],fc=_colors_light[index],histtype="stepfilled", density=True, range = range) #
+        if vlines:
             delta = (binset[1]-binset[0])/2
             idx = n.argmax()
-            # print(idx)
-            ax.axvline(binset[idx]+delta, linestyle="--", color=colors[index])
+            ax.axvline(binset[idx]+delta, linestyle="--", color=_colors[index])
     ax.set_xlim(range)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Relative Area")
@@ -357,6 +369,134 @@ def twod_histogram(data1, data2, areas, data1_label, data2_label, title, bins=(5
     plt.tight_layout()
     fig.savefig(filename, bbox_inches='tight')
     fig.savefig(filename[:-3]+"png", bbox_inches='tight')
+    return True
+
+def scatter_regression(x_data_sets, y_data_sets, area_sets, labels,
+                       xlabel, ylabel, title_prefix,
+                       filename="scatter_regression.svg",
+                       figsize=None, xlim=None, ylim=None,
+                       show_stats=True, alpha=0.3, s=1):
+    """Create scatter plots with area-weighted linear regression for multiple datasets.
+
+    Creates a grid of subplots, one per condition, each showing a scatter plot
+    with weighted linear regression line and statistics.
+
+    Args:
+        x_data_sets (list of lists): x values for each condition
+        y_data_sets (list of lists): y values for each condition
+        area_sets (list of lists): area weights for each condition (used for regression weighting)
+        labels (list): labels for each condition
+        xlabel (str): x-axis label
+        ylabel (str): y-axis label
+        title_prefix (str): prefix for subplot titles (label will be appended)
+        filename (str): output filename
+        figsize (tuple): figure size (default: auto-calculated based on number of conditions)
+        xlim (tuple): x-axis limits (min, max)
+        ylim (tuple): y-axis limits (min, max)
+        show_stats (bool): whether to show regression statistics on plot
+        alpha (float): transparency of scatter points
+        s (float): size of scatter points
+    """
+    n_conditions = len(x_data_sets)
+
+    # Calculate grid layout (prefer horizontal layout)
+    if n_conditions <= 3:
+        nrows, ncols = 1, n_conditions
+    elif n_conditions == 4:
+        nrows, ncols = 2, 2
+    elif n_conditions == 5:
+        nrows, ncols = 2, 3
+    else:
+        nrows = int(np.ceil(np.sqrt(n_conditions)))
+        ncols = int(np.ceil(n_conditions / nrows))
+
+    if figsize is None:
+        figsize = (4 * ncols, 3.5 * nrows)
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
+    if n_conditions == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten() if nrows > 1 or ncols > 1 else [axes]
+
+    for idx, (x_data, y_data, areas, label) in enumerate(zip(x_data_sets, y_data_sets, area_sets, labels)):
+        ax = axes[idx]
+
+        if len(x_data) == 0 or len(y_data) == 0:
+            ax.text(0.5, 0.5, f'No data\nfor {label}',
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            continue
+
+        # Convert to numpy arrays
+        x = np.array(x_data)
+        y = np.array(y_data)
+        w = np.array(areas)
+
+        # Filter out NaN and inf values
+        valid_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(w)
+        x = x[valid_mask]
+        y = y[valid_mask]
+        w = w[valid_mask]
+
+        if len(x) == 0:
+            ax.text(0.5, 0.5, f'No valid data\nfor {label}',
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            continue
+
+        # Create scatter plot (area determines point size or use uniform small size)
+        ax.scatter(x, y, s=s, alpha=alpha, color=colors[idx], rasterized=True)
+
+        # Perform weighted linear regression
+        # np.polyfit with weights performs weighted least squares
+        coeffs = np.polyfit(x, y, 1, w=w)
+        slope, intercept = coeffs
+
+        # Calculate R² for weighted regression
+        y_pred = slope * x + intercept
+        ss_res = np.sum(w * (y - y_pred)**2)
+        ss_tot = np.sum(w * (y - np.average(y, weights=w))**2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
+        # Calculate p-value using unweighted regression (scipy doesn't support weighted)
+        # This is a limitation but gives us a p-value estimate
+        slope_uw, intercept_uw, r_value, p_value, std_err = stats.linregress(x, y)
+
+        # Plot regression line
+        x_line = np.array([x.min(), x.max()])
+        y_line = slope * x_line + intercept
+        ax.plot(x_line, y_line, color=colors[idx], linewidth=2, alpha=0.8,
+               label=f'y = {slope:.3f}x + {intercept:.2f}')
+
+        # Add statistics text
+        if show_stats:
+            stats_text = f'$R^2$ = {r_squared:.3f}\np < {p_value:.1e}' if p_value < 0.001 else f'$R^2$ = {r_squared:.3f}\np = {p_value:.3f}'
+            ax.text(0.05, 0.95, stats_text, transform=ax.transAxes,
+                   verticalalignment='top', fontsize=SMALL_SIZE,
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_title(f'{title_prefix} - {label}')
+
+        if xlim:
+            ax.set_xlim(xlim)
+        if ylim:
+            ax.set_ylim(ylim)
+
+        ax.grid(True, alpha=0.3)
+
+    # Hide extra subplots if n_conditions < nrows*ncols
+    for idx in range(n_conditions, nrows * ncols):
+        axes[idx].set_visible(False)
+
+    plt.tight_layout()
+    fig.savefig(filename, bbox_inches='tight', dpi=300)
+    fig.savefig(filename[:-3]+"png", bbox_inches='tight', dpi=300)
+    plt.close(fig)
     return True
 
 def barchart(bars, errors, labels, title, ylabel, filename="barchart.svg", figsize=(4,3), ymax=None, hline=None):
