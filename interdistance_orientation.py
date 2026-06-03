@@ -111,6 +111,98 @@ def surface_to_surface(graph1, label1, graph2, label2, orientation=True, save_ne
         csvname = graph2[:-3]+".csv"
         export_csv(tg2, csvname)
 
+def head_to_head_distance_SURFACE(graph1, label1, graph2, label2, orientation=True, save_neighbor_index=True, exportcsv=True):
+    """Measure nearest surface-to-surface distance minus half the per-triangle thickness on each side.
+
+    Equivalent to surface_to_surface but subtracts 0.5 * thickness_self + 0.5 * thickness_neighbor
+    from each measured distance, approximating head-to-head (leaflet outer face) separation.
+    Requires that thickness has already been computed and stored as vp.thickness on both graphs.
+
+    graph1 (str): filename of triangle graph object (.gt file)
+    label1 (str): Segmentation label for graph 1
+    graph2 (str): filename of triangle graph object (.gt file)
+    label2 (str): Segmentation label for graph 2
+    orientation (bool): If True, measure and save the relative orientation of the nearest neighbor
+    save_neighbor_index (bool): If True, save the index of the nearest neighbor to the graph
+    exportcsv (bool): If True, update the CSV file with the new data.
+    """
+    surface1 = graph1[:-3] + ".vtp"
+    surface2 = graph2[:-3] + ".vtp"
+    print(f"Loading {graph1}")
+    tg1 = TriangleGraph()
+    tg1.graph = load_graph(graph1)
+    xyz1 = tg1.graph.vp.xyz.get_2d_array([0,1,2]).transpose()
+    thickness1 = tg1.graph.vp.thickness.get_array()
+
+    print(f"Loading {graph2}")
+    tg2 = TriangleGraph()
+    tg2.graph = load_graph(graph2)
+    xyz2 = tg2.graph.vp.xyz.get_2d_array([0,1,2]).transpose()
+    thickness2 = tg2.graph.vp.thickness.get_array()
+
+    print("Calculating Distances")
+    vprop1 = tg1.graph.new_vertex_property("double")
+    vprop2 = tg2.graph.new_vertex_property("double")
+
+    tree1 = cKDTree(xyz2)
+    mindist1, min_index_1 = tree1.query(xyz1)
+    h2h1 = mindist1 - 0.5 * thickness1 - 0.5 * thickness2[min_index_1]
+    vprop1.a = h2h1
+    tg1.graph.vp[label2+"_head_to_head_dist"] = vprop1
+
+    tree2 = cKDTree(xyz1)
+    mindist2, min_index_2 = tree2.query(xyz2)
+    h2h2 = mindist2 - 0.5 * thickness2 - 0.5 * thickness1[min_index_2]
+    vprop2.a = h2h2
+    tg2.graph.vp[label1+"_head_to_head_dist"] = vprop2
+
+    if save_neighbor_index:
+        print("Saving Neighbor Index")
+        neighbor1 = tg1.graph.new_vertex_property("int")
+        neighbor1.a = min_index_1
+        tg1.graph.vp[label2+"_neighbor_index"] = neighbor1
+        neighbor2 = tg2.graph.new_vertex_property("int")
+        neighbor2.a = min_index_2
+        tg2.graph.vp[label1+"_neighbor_index"] = neighbor2
+
+    if orientation:
+        print("Calculating Relative Orientations")
+        angles1 = tg1.graph.vp.n_v.get_2d_array([0,1,2]).transpose()
+        angles2 = tg2.graph.vp.n_v.get_2d_array([0,1,2]).transpose()
+
+        neighbor_angles_1to2 = angles2[min_index_1]
+        relative_angles_1 = [np.arccos(np.abs(np.dot(angles1[i], neighbor_angles_1to2[i])))*180/np.pi for i in range(len(angles1))]
+        ang1 = tg1.graph.new_vertex_property("float")
+        ang1.a = relative_angles_1
+        tg1.graph.vp[label2+"_orientation"] = ang1
+        neighbor_angles_2to1 = angles1[min_index_2]
+        relative_angles_2 = [np.arccos(np.abs(np.dot(angles2[i], neighbor_angles_2to1[i])))*180/np.pi for i in range(len(angles2))]
+        ang2 = tg2.graph.new_vertex_property("float")
+        ang2.a = relative_angles_2
+        tg2.graph.vp[label1+"_orientation"] = ang2
+
+    print(f"Head-to-head distances from {label1} to {label2} (Min, Mean, Median, Max):")
+    print(np.min(vprop1.a), np.mean(vprop1.a), np.median(vprop1.a), np.max(vprop1.a))
+
+    print(f"Head-to-head distances from {label2} to {label1} (Min, Mean, Median, Max):")
+    print(np.min(vprop2.a), np.mean(vprop2.a), np.median(vprop2.a), np.max(vprop2.a))
+
+    print("Saving out files")
+    surf1 = tg1.graph_to_triangle_poly()
+    io.save_vtp(surf1, surface1)
+    tg1.graph.save(graph1)
+    if exportcsv:
+        csvname = graph1[:-3]+".csv"
+        export_csv(tg1, csvname)
+
+    surf2 = tg2.graph_to_triangle_poly()
+    io.save_vtp(surf2, surface2)
+    tg2.graph.save(graph2)
+    if exportcsv:
+        csvname = graph2[:-3]+".csv"
+        export_csv(tg2, csvname)
+
+
 @click.command()
 @click.argument('graph1', type=click.Path(exists=True))
 @click.argument('label1', type=click.STRING)

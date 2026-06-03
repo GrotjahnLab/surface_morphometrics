@@ -44,12 +44,12 @@ if len(argv) < 2:
 with open(argv[1]) as file:
     config = yaml.safe_load(file)
     if not config["work_dir"]:
-        if not config["data_dir"]:
+        if not config["seg_dir"]:
             print("No working directory is specified in the config file. Please specify a working directory or a data directory.")
             exit()
         else:
             print("No working directory is specified in the config file. The data directory will be used for input and output.")
-            config["work_dir"] = config["data_dir"]
+            config["work_dir"] = config["seg_dir"]
 
 # Warn if configured cores exceed logical cores
 cores = config["cores"]
