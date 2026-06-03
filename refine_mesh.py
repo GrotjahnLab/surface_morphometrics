@@ -1097,7 +1097,7 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
         config = yaml.safe_load(f)
 
     # Get directories
-    work_dir = config.get("work_dir", config.get("data_dir", "./"))
+    work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
         work_dir += "/"
 

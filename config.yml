@@ -1,5 +1,5 @@
 # UNIVERSAL
-data_dir: "./thickness_examples/segmentations/"  # Directory containing segmentation MRC files
+seg_dir: "./thickness_examples/segmentations/"  # Directory containing segmentation MRC files
 tomo_dir: "./thickness_examples/tomograms/"  # Directory containing tomogram MRC files (for thickness measurements)
 work_dir: "./thickness_examples/morphometrics/"  # Working directory for output files
 exp_name: "test" # Subdirectory of work folder for this experiment
@@ -16,8 +16,8 @@ surface_generation:
   extrapolation_distance: 1.5 # Distance in nm (or angstroms, if angstrom setting is True) to extrapolate the surface
   isotropic_remesh: true # If true, applies isotropic remeshing to create near-equilateral triangles with target average area.
   target_area: 1.0 # Target average triangle area in square units (nm^2 by default). Used when isotropic_remesh is true. Values between 1.0 and 3.0 generally yield good results, but smaller triangles significantly increase computation time.
-  simplify: false # If true, decimates the mesh to max_triangles. Note: simplified surfaces will not be isotropic.
-  max_triangles: 300000 # Only used if simplify is true. When using isotropic_remesh, target_area controls triangle count instead.
+  simplify: false # If true, decimates the mesh to simplify_max_triangles. Note: simplified surfaces will not be isotropic.
+  simplify_max_triangles: 300000 # ONLY used when simplify is true (not the default). When using isotropic_remesh, target_area controls triangle count instead.
   octree_depth: 9 # Increase if the surface is too smooth, decrease if surface is too jagged - but has a HUGE effect.
   point_weight: 0.7 # Larger numbers have stronger weight towards fitting segmented points, smaller numbers have stronger weight towards generating a smooth surface
   neighbor_count: 400 # Number of neighbors used for normal estimation. Should not need to adjust this, but I am exposing it as a tuning variable. Values over 50 seem to all be equivalently good...

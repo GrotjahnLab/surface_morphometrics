@@ -33,20 +33,37 @@ if len(argv) < 2:
 # Check for a data dir and a work dir
 with open(argv[1]) as file:
     config = yaml.safe_load(file)
-    if not config["data_dir"]:
-        print("data_dir not specified in config.yml")
+
+    # Warn about renamed config keys (see README). Older config files used
+    # different names for these settings and will no longer work as-is.
+    renamed_keys = []
+    if "data_dir" in config:
+        renamed_keys.append("  'data_dir' has been renamed to 'seg_dir' (the directory of segmentation MRC files).")
+    if "max_triangles" in config.get("surface_generation", {}):
+        renamed_keys.append("  'max_triangles' has been renamed to 'simplify_max_triangles' (only used when simplify: true).")
+    if renamed_keys:
+        print("=" * 70)
+        print("WARNING: Your config.yml uses outdated key names that have changed:")
+        for msg in renamed_keys:
+            print(msg)
+        print("Please update your config.yml to use the new key names.")
+        print("See the README for details on the current configuration format.")
+        print("=" * 70)
+
+    if not config.get("seg_dir"):
+        print("seg_dir not specified in config.yml")
         exit()
-    elif not config["data_dir"].endswith("/"):
-        config["data_dir"] += "/"
+    elif not config["seg_dir"].endswith("/"):
+        config["seg_dir"] += "/"
     if not config["work_dir"]:
-        print("work_dir not specified in config.yml - data_dir will be used for output")
-        config["work_dir"] = config["data_dir"]
+        print("work_dir not specified in config.yml - seg_dir will be used for output")
+        config["work_dir"] = config["seg_dir"]
 
 # See if a specific file was specified
 if len(argv) == 2:
     print("No input file specified - will run on all MRC files in the data directory")
-    print("Pattern Matched: "+config["data_dir"]+"*.mrc")
-    segmentation_files = glob.glob(config["data_dir"]+"*.mrc")
+    print("Pattern Matched: "+config["seg_dir"]+"*.mrc")
+    segmentation_files = glob.glob(config["seg_dir"]+"*.mrc")
     segmentation_files = [os.path.basename(f) for f in segmentation_files]
     print(segmentation_files)
 else:
@@ -74,7 +91,7 @@ def run_xyz_to_ply(xyz_file, ply_file, surface_config):
         sys.executable, script, xyz_file, ply_file,
         "--pointweight", str(sg["point_weight"]),
         "--simplify", str(sg["simplify"]),
-        "--num_faces", str(sg["max_triangles"]),
+        "--num_faces", str(sg["simplify_max_triangles"]),
         "--k_neighbors", str(sg["neighbor_count"]),
         "--deldist", str(sg["extrapolation_distance"]),
         "--smooth_iter", str(sg["smoothing_iterations"]),
@@ -92,7 +109,7 @@ def run_xyz_to_ply(xyz_file, ply_file, surface_config):
 for file in segmentation_files:
     print(f"Processing segmentation {file}")
     basename = file[:-4]
-    input = config["data_dir"]+file
+    input = config["seg_dir"]+file
     for key,value in seg_values.items():
         # Convert the segmentation file to xyz files
         xyz_file = config["work_dir"]+basename+"_"+str(key)+".xyz"

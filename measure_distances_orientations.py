@@ -35,14 +35,14 @@ if len(argv) < 2:
 # Check for a data dir and a work dir
 with open(argv[1]) as file:
     config = yaml.safe_load(file)
-    if not config["data_dir"]:
-        print("data_dir not specified in config.yml")
+    if not config["seg_dir"]:
+        print("seg_dir not specified in config.yml")
         exit()
-    elif not config["data_dir"].endswith("/"):
-        config["data_dir"] += "/"
+    elif not config["seg_dir"].endswith("/"):
+        config["seg_dir"] += "/"
     if not config["work_dir"]:
-        print("work_dir not specified in config.yml - data_dir will be used for output")
-        config["work_dir"] = config["data_dir"]
+        print("work_dir not specified in config.yml - seg_dir will be used for output")
+        config["work_dir"] = config["seg_dir"]
     elif not config["work_dir"].endswith("/"):
         config["work_dir"] += "/"
 # See if a specific file was specified
@@ -55,8 +55,8 @@ if len(argv) == 2:
     answer = input("Continue? [y/n]")
     if answer != "y":
         exit()
-    print("Pattern Matched: "+config["data_dir"]+"*.mrc")
-    segmentation_files = glob.glob(config["data_dir"]+"*.mrc")
+    print("Pattern Matched: "+config["seg_dir"]+"*.mrc")
+    segmentation_files = glob.glob(config["seg_dir"]+"*.mrc")
     segmentation_files = [os.path.basename(f) for f in segmentation_files]
     print(segmentation_files)
 

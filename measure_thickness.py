@@ -275,7 +275,7 @@ def run_measure_thickness(config, output_dir=None):
         Output directory for plots (defaults to work_dir)
     """
     # Get settings from config
-    work_dir = config.get("work_dir", config.get("data_dir", "./"))
+    work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
         work_dir += "/"
 
