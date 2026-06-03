@@ -57,6 +57,22 @@ thickness_measurements:
     - IMM
     - ER
 
+# PATCH ANALYSIS (used by generate_patches.py and label_connected_components.py)
+patch_analysis:
+  membrane_label: IMM            # Which segmentation_values label to place patches on (batch mode)
+  patch_radius: 12               # nm; triangles within this distance of a center join the patch
+  particle_max_distance: 24      # nm; skip patches when the particle is farther than this from the membrane. Set to null to disable.
+  generate_random: true          # Also generate matched random control patches
+  random_min_distance: 12        # nm; minimum spacing between random patch centers
+  random_seed: 0                 # Seed for reproducible random patches
+  star_dir: "./star/"            # Directory of STAR files (batch mode)
+  star_pattern: "{tomo}.star"    # How to find the STAR file for a tomogram basename
+  star_coord_columns: [rlnCoordinateX, rlnCoordinateY, rlnCoordinateZ]  # Particle coordinate columns
+  star_pixelsize_column: rlnPixelSize  # Pixel size column (Angstrom/pixel)
+  star_coords_in_pixels: true    # If true, multiply coordinates by the pixel-size column
+  annotate_star: true            # Write an annotated STAR with patch_id, mesh_distance, mesh_neighbor_id
+  min_component_size: 0          # label_connected_components.py: drop components smaller than this (0 = keep all)
+
 # MESH REFINEMENT (used by refine_mesh.py)
 mesh_refinement:
   iterations: 5  # Number of refinement iterations
@@ -64,7 +80,7 @@ mesh_refinement:
   monolayer: false  # Set to true for high-defocus data where bilayer is not resolved. Fits single Gaussian instead of dual.
   use_xcorr: true  # Set to true to use cross-correlation with global average instead of Gaussian fitting. More robust to noise.
   average_radius: 20  # Radius in nm for local averaging of density profiles. Larger values = more smoothing.
-  average_radius_decay: 0.9  # Factor to multiply radius by each iteration (e.g., 0.8 = 20% reduction). Set to 1.0 for no decay.
+  average_radius_decay: 1.0  # Factor to multiply radius by each iteration (e.g., 0.8 = 20% reduction). Set to 1.0 for no decay.
   average_radius_min: 12.0  # Minimum averaging radius in nm (prevents over-fitting to noise in later iterations).
   max_total_offset: 4  # Maximum total displacement from original surface in nm. Prevents divergence in poorly-fit regions.
   # Smoothing options to reduce surface roughness

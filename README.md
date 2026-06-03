@@ -128,6 +128,32 @@ project/
 
 Sampling output (`*_sampling.csv`) is written into `work_dir` alongside the graph files. If no graph files matching a tomogram's basename are found, that tomogram is silently skipped — so a basename mismatch is the most common reason thickness or refinement "finds no files."
 
+### Protein patch and connected-component analysis (optional)
+These tools tag regions of a membrane graph with an integer id so that per-region statistics (curvature, thickness, etc.) can be computed and compared. They are configured by the `patch_analysis` section of `config.yml`.
+
+**Protein-centered patches** (`generate_patches.py`). Given a STAR file of particle coordinates (e.g. ATP synthase, ribosomes) and a membrane graph, this places a circular patch (`patch_radius` nm) on the nearest membrane triangle to each particle:
+```bash
+python generate_patches.py config.yml                                  # batch over all tomograms
+python generate_patches.py config.yml --graph TS1_IMM.AVV_rh8.gt --star TS1.star  # one graph + star
+python generate_patches.py config.yml --no-random                      # skip random control patches
+```
+- Each patch is identified by the particle's **STAR line ID** (`patch_number`/`patch_center`), so patches map directly back to their particle.
+- Triangles in overlapping patches are assigned to the **nearest** patch center; the deciding distances are stored as `patch_center_distance` and `protein_distance` (distance to the particle).
+- With `generate_random: true`, matched **random control patches** are placed (min-distance `random_min_distance`, reproducible via `random_seed`) into `patch_random_number`/`patch_random_center`, reusing the paired patch ids so `patch_random_number == i` is the control for `patch_number == i`.
+- Set `particle_max_distance` to skip particles too far from the membrane (set to `null` to disable the filter).
+- **STAR organization (batch mode):** STAR files live in `star_dir` and are matched to each tomogram via `star_pattern` (default `"{tomo}.star"`). Coordinate/pixel-size columns are configurable (`star_coord_columns`, `star_pixelsize_column`, `star_coords_in_pixels`) and default to RELION conventions.
+- **Annotated STAR output:** with `annotate_star: true`, the tool writes `{star}_{label}_meshannotated.star` adding `patch_id`, `mesh_distance` (nm to the nearest membrane triangle) and `mesh_neighbor_id` per particle — useful for *particle-side* filtering, e.g. selecting cotranslating ribosomes by thresholding `mesh_distance`.
+
+**Connected components** (`label_connected_components.py`). Labels each connected component of a graph with a `component_number` (1..N by descending size; `min_component_size` drops small ones to `0`). This parallels `patch_number`, so the same downstream per-region math applies to whole components:
+```bash
+python label_connected_components.py config.yml                        # all AVV graphs
+python label_connected_components.py config.yml --graph TS1_IMM.AVV_rh8.gt
+```
+
+Both tools write `*_patches.{gt,vtp,csv}` / `*_components.{gt,vtp,csv}` (CSV via the standard `export_csv`, so every per-triangle property — including the patch/component ids and distances — is available for pandas-based statistics).
+
+> This is the first stage of the patch analysis workflow being ported from [GrotjahnLab/patch_analysis](https://github.com/GrotjahnLab/patch_analysis); per-patch statistics and an arbitrary region extractor are planned next.
+
 ### Examples of generating statistics and plots:
 * `python single_file_histogram.py filename.csv -n feature` will generate an area-weighted histogram for a feature of interest in a single tomogram. I am using a variant of this script to respond to reviews asking for more per-tomogram visualizations!
 * `python single_file_2d.py filename.csv -n1 feature1 -n2 feature2` will generate a 2D histogram for 2 features of interest for a single surface.
@@ -148,7 +174,10 @@ Individual steps are available as click commands in the terminal, and as functio
     4. `interdistance_orientation.py` to generate distance metrics and orientation measurements between surfaces.
     5. `sample_density.py` then `measure_thickness.py` to measure local membrane thickness from the raw tomogram density.
     6. Outputs: gt graphs for further analysis, vtp files for paraview visualization, and CSV files for         pandas-based plotting and statistics
-3. Morphometric Quantification - there is no click function for this, as the questions answered depend on the biological system of interest!
+3. Region tagging for per-region statistics (optional, see [Protein patch and connected-component analysis](#protein-patch-and-connected-component-analysis-optional))
+    1. `generate_patches.py` to place protein-centered patches (and random controls) on a membrane from a STAR file, tagging triangles with `patch_number`.
+    2. `label_connected_components.py` to tag each connected component with `component_number` for whole-component statistics.
+4. Morphometric Quantification - there is no click function for this, as the questions answered depend on the biological system of interest!
     1. `morphometrics_stats.py` is a set of classes and functions to generate graphs and statistics with pandas.
     2. [Paraview](https://www.paraview.org/) for 3D surface mapping of quantifications.
     3. **[Quantifications Documentation](quantifications_documentation.md)** - Complete reference for all morphological measurements and their interpretations.
@@ -180,6 +209,7 @@ Individual steps are available as click commands in the terminal, and as functio
 8. Pycurv   
     1. Pyto
     2. Graph-tool
+9. starfile (for patch analysis from STAR files)
 
 
 ## Citation
