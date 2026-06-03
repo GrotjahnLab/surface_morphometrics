@@ -152,7 +152,23 @@ python label_connected_components.py config.yml --graph TS1_IMM.AVV_rh8.gt
 
 Both tools write `*_patches.{gt,vtp,csv}` / `*_components.{gt,vtp,csv}` (CSV via the standard `export_csv`, so every per-triangle property — including the patch/component ids and distances — is available for pandas-based statistics).
 
-> This is the first stage of the patch analysis workflow being ported from [GrotjahnLab/patch_analysis](https://github.com/GrotjahnLab/patch_analysis); per-patch statistics and an arbitrary region extractor are planned next.
+**Per-region statistics** (`patch_statistics.py`). Because patches and components both tag triangles with an integer region id, one property-agnostic, area-weighted aggregator serves all of them. It reads the per-triangle CSVs and writes one tidy `patch_statistics.csv` with a row per region:
+```bash
+python patch_statistics.py config.yml                                  # all *_patches.csv in work_dir
+python patch_statistics.py config.yml --pattern "*_components.csv"      # components instead
+python patch_statistics.py config.yml --properties curvedness_VV,thickness --csv TS1_IMM.AVV_rh9_patches.csv
+```
+- Auto-detects whichever label columns are present (`patch_number`, `patch_random_number`, `component_number`) and tags each output row with `region_type` (`patch`/`random`/`component`), so real patches and their random controls land in the same table for direct comparison.
+- Reports area-weighted mean and median per property (configurable via `statistics_properties`), plus `n_triangles` and `total_area`. Triangles with value 0 or NaN are dropped per property (use `--keep-zeros` to retain), and region id 0 is always excluded.
+
+**Arbitrary region extractor** (`extract_patches.py`). Splits a graph into independent `.gt/.vtp/.csv` subsets, either by a label column or by thresholding any vertex property:
+```bash
+python extract_patches.py config.yml --graph TS1_IMM.AVV_rh9_patches.gt --by patch_number   # one file per patch
+python extract_patches.py config.yml --graph TS1_ER.AVV_rh9.gt --property OMM_dist --max 30  # ER within 30 nm of OMM
+```
+The `--property NAME --min/--max` mode works on any per-triangle property (distances like `OMM_dist`, curvature, thickness, etc.), so extraction isn't limited to patches.
+
+> This workflow is being ported from [GrotjahnLab/patch_analysis](https://github.com/GrotjahnLab/patch_analysis). Still to come: porting the flipper-based line-scan sampling.
 
 ### Examples of generating statistics and plots:
 * `python single_file_histogram.py filename.csv -n feature` will generate an area-weighted histogram for a feature of interest in a single tomogram. I am using a variant of this script to respond to reviews asking for more per-tomogram visualizations!
@@ -174,9 +190,11 @@ Individual steps are available as click commands in the terminal, and as functio
     4. `interdistance_orientation.py` to generate distance metrics and orientation measurements between surfaces.
     5. `sample_density.py` then `measure_thickness.py` to measure local membrane thickness from the raw tomogram density.
     6. Outputs: gt graphs for further analysis, vtp files for paraview visualization, and CSV files for         pandas-based plotting and statistics
-3. Region tagging for per-region statistics (optional, see [Protein patch and connected-component analysis](#protein-patch-and-connected-component-analysis-optional))
+3. Region tagging and per-region analysis (optional, see [Protein patch and connected-component analysis](#protein-patch-and-connected-component-analysis-optional))
     1. `generate_patches.py` to place protein-centered patches (and random controls) on a membrane from a STAR file, tagging triangles with `patch_number`.
     2. `label_connected_components.py` to tag each connected component with `component_number` for whole-component statistics.
+    3. `patch_statistics.py` to compute area-weighted per-region summary statistics (works on patches, random controls, or components).
+    4. `extract_patches.py` to split a graph into per-region files, by label (`--by patch_number`) or by any property range (`--property OMM_dist --max 30`).
 4. Morphometric Quantification - there is no click function for this, as the questions answered depend on the biological system of interest!
     1. `morphometrics_stats.py` is a set of classes and functions to generate graphs and statistics with pandas.
     2. [Paraview](https://www.paraview.org/) for 3D surface mapping of quantifications.

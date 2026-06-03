@@ -72,6 +72,7 @@ patch_analysis:
   star_coords_in_pixels: true    # If true, multiply coordinates by the pixel-size column
   annotate_star: true            # Write an annotated STAR with patch_id, mesh_distance, mesh_neighbor_id
   min_component_size: 0          # label_connected_components.py: drop components smaller than this (0 = keep all)
+  statistics_properties: [curvedness_VV, thickness]  # patch_statistics.py: per-triangle properties to summarize per region
 
 # MESH REFINEMENT (used by refine_mesh.py)
 mesh_refinement:
