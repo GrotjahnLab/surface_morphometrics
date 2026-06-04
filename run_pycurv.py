@@ -1,118 +1,16 @@
-#! /usr/bin/env python
-"""Step two of the pipeline for surface morphometrics
-Take a VTP style mesh generatead through the screen and perform curvature analysis using AVV.
+#!/usr/bin/env python
+"""DEPRECATED shim -> `morphometrics pycurv`.
 
-Citation: Barad BA, Medina M et al. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.
-Pycurv Citation: Salfer M et al. Reliable estimation of membrane curvature for cryo-electron tomography. PLOS Computational Biology 2020.
-
-Two usage options:
-1. Run pycurv on a single mesh (Recommended!):
-  run_pycurv.py config.yml mesh.vtp
-2. Run pycurv on all meshes in the working directory:
- segmentation_to_meshes.py config.yml
-
-Because pycurv is quite resource intensive, it is recommended to use option 1 with a cluster submission script in parallel, rather than sequentially running all vtp files.
+This script has moved into the installable `surface_morphometrics` package and is
+now invoked as `morphometrics pycurv ...`. This thin wrapper forwards to that
+command and will be removed in a future release.
 """
+import sys
 
-__author__ = "Benjamin Barad"
-__email__ = "benjamin.barad@gmail.com"
-__license__ = "GPLv3"
+from surface_morphometrics.cli import main
 
-# Set OMP_NUM_THREADS=1 before any imports to prevent OpenMP + fork deadlocks
-# when graph-tool is used with multiprocessing
-import os
-os.environ["OMP_NUM_THREADS"] = "1"
-
-from sys import argv
-import glob
-
-import yaml
-
-import curvature
-
-# Check for -f flag
-force = "-f" in argv
-if force:
-    argv.remove("-f")
-
-# Check for a config file
-if len(argv) < 2:
-    print("Usage: run_pycurv.py [-f] config.yml [filename.surface.vtp]")
-    exit()
-
-# Check for a data dir and a work dir
-with open(argv[1]) as file:
-    config = yaml.safe_load(file)
-    if not config["work_dir"]:
-        if not config["seg_dir"]:
-            print("No working directory is specified in the config file. Please specify a working directory or a data directory.")
-            exit()
-        else:
-            print("No working directory is specified in the config file. The data directory will be used for input and output.")
-            config["work_dir"] = config["seg_dir"]
-
-# Warn if configured cores exceed logical cores
-cores = config["cores"]
-logical_cores = os.cpu_count()
-if cores > logical_cores:
-    print(f"WARNING: Configured cores ({cores}) exceeds the number of logical cores ({logical_cores}).")
-    print("This may cause performance degradation due to oversubscription.")
-    if not force:
-        answer = input("Continue anyway? [y/n] ")
-        if answer != "y":
-            exit()
-
-# Figure out what files will be run
-if len(argv) == 2:
-    print("No input file specified - will run on all VTP files in the data directory")
-    print("This may take a very long time - pycurv can take over an hour to run on a single mesh")
-    print("It is recommended to run in parallel with a cluster submission script for individual files")
-    print("Recommended usage: run_pycurv.py config.yml <meshname.surface.vtp>")
-    if not force:
-        answer = input("Continue? [y/n]")
-        if answer != "y":
-            exit()
-    mesh_files = glob.glob(config["work_dir"]+"*.surface.vtp")
-    mesh_files = [os.path.basename(f) for f in mesh_files]
-else:
-    print("Input file specified - will run on this file only")
-    mesh_files = [argv[2]]
-
-# Check that work dir exists for outputs
-if not os.path.isdir(config["work_dir"]):
-    os.mkdir(config["work_dir"])
-
-failed_surfaces = []
-for i, surface in enumerate(mesh_files):
-    print("Processing {} ({}/{})".format(surface, i+1, len(mesh_files)))
-    try:
-        curvature.run_pycurv(surface, config["work_dir"],
-                            scale=1.0,
-                            radius_hit=config["curvature_measurements"]["radius_hit"],
-                            min_component=config["curvature_measurements"]["min_component"],
-                            exclude_borders=config["curvature_measurements"]["exclude_borders"],
-                            cores=config["cores"])
-        print("Completed {}\n".format(surface))
-    except Exception as e:
-        print("WARNING: Skipping {} due to error: {}\n".format(surface, e))
-        failed_surfaces.append(surface)
-
-if failed_surfaces:
-    print("The following surfaces failed and were skipped:")
-    for s in failed_surfaces:
-        print("  - {}".format(s))
-
-    
-print("-------------------------------------------------------")
-print("Pycurv complete. It is highly recommended to check the AVV vtp file with paraview to confirm good results.")
-print("If you are happy with the results, you can move on to `distances_and_orientations.py`.")
-print("Pycurv Citation: Salfer M, Collado JF, Baumeister W, Fernández-Busnadiego R, Martínez-Sánchez A. Reliable estimation of membrane curvature for cryo-electron tomography. PLOS Comp Biol 2020.")
-print("Pipeline Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA. Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline. J Cell Biol 2023.")
-
-
-    
-
-
-
-
-
+print(
+    "DEPRECATED: run `morphometrics pycurv ...` instead of `python run_pycurv.py ...`",
+    file=sys.stderr,
+)
+main(["pycurv", *sys.argv[1:]])

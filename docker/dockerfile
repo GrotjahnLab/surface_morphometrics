@@ -16,10 +16,13 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory
 WORKDIR /surface_morphometrics
 
-# Copy the environment and requirements files
-COPY environment.yml pip_requirements.txt ./
+# Copy the environment/requirements files plus the package itself, because
+# environment.yml installs this toolkit via `pip install -e .` and therefore needs
+# pyproject.toml, the README, and the package source present at env-create time.
+COPY environment.yml pip_requirements.txt pyproject.toml README.md ./
+COPY surface_morphometrics/ ./surface_morphometrics/
 
-# Install the conda environment
+# Install the conda environment (also editable-installs this package + `morphometrics`)
 RUN conda env create -f environment.yml  && \
     conda clean -afy
 
