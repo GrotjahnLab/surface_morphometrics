@@ -89,6 +89,16 @@ tar -xzvf examples.tar.gz
 ```
 
 There are two example datasets: `TE1.mrc` and `TF1.mrc`. No tomogram data is provided for refinement or thickness measurement, as these require larger files, but the segmentation files are sufficient to run the curvature and distance/orientation steps of the pipeline.
+
+### Full-pipeline example (with a raw tomogram)
+To test the parts of the pipeline that need the raw tomogram (`sample_density`, `measure_thickness`, `refine_mesh`), download a small cropped IMM+OMM sub-volume (~44 MB) hosted on Zenodo:
+
+```bash
+morphometrics fetch_example          # downloads + extracts surface_morphometrics_example/
+cd surface_morphometrics_example     # contains tomograms/, segmentations/, and a ready config.yml
+morphometrics make_meshes config.yml
+```
+The bundled `config.yml` is preconfigured for this dataset (IMM=1, OMM=2). The full, uncropped source tomograms are available on [EMPIAR-12534](https://www.ebi.ac.uk/empiar/EMPIAR-12534/); `morphometrics fetch_example --source empiar` prints how to retrieve them (each is hundreds of MB to GB).
 You can open them with `mrcfile`, like so:
 
 ```python
