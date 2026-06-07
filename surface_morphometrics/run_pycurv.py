@@ -6,12 +6,10 @@ Citation: Barad BA, Medina M et al. Quantifying organellar ultrastructure in cry
 Pycurv Citation: Salfer M et al. Reliable estimation of membrane curvature for cryo-electron tomography. PLOS Computational Biology 2020.
 
 Two usage options:
-1. Run pycurv on a single mesh (Recommended!):
+1. Run pycurv on a single mesh:
   morphometrics pycurv config.yml mesh.surface.vtp
 2. Run pycurv on all meshes in the working directory:
   morphometrics pycurv config.yml
-
-Because pycurv is quite resource intensive, it is recommended to use option 1 with a cluster submission script in parallel, rather than sequentially running all vtp files.
 """
 
 __author__ = "Benjamin Barad"
@@ -41,8 +39,8 @@ def run_pycurv_cli(configfile, surface, force):
     """Run pycurv vector-voting curvature analysis on surface meshes.
 
     CONFIGFILE: path to config.yml.
-    SURFACE: optional single .surface.vtp to process (recommended for cluster
-    parallelization); if omitted, all surfaces in work_dir are processed.
+    SURFACE: optional single .surface.vtp to process; if omitted, all surfaces
+    in work_dir are processed.
     """
     with open(configfile) as file:
         config = yaml.safe_load(file)
@@ -67,14 +65,7 @@ def run_pycurv_cli(configfile, surface, force):
 
     # Figure out what files will be run
     if surface is None:
-        print("No input file specified - will run on all VTP files in the data directory")
-        print("This may take a very long time - pycurv can take over an hour to run on a single mesh")
-        print("It is recommended to run in parallel with a cluster submission script for individual files")
-        print("Recommended usage: morphometrics pycurv config.yml <meshname.surface.vtp>")
-        if not force:
-            answer = input("Continue? [y/n]")
-            if answer != "y":
-                sys.exit(1)
+        print("No input file specified - will run on all VTP files in the working directory")
         mesh_files = glob.glob(config["work_dir"] + "*.surface.vtp")
         mesh_files = [os.path.basename(f) for f in mesh_files]
     else:

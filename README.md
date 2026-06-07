@@ -120,7 +120,7 @@ can run in 2 hours for as many tomograms as desired.
 
     > **Note for existing users:** the toolkit is now an installable package driven by a single `morphometrics` command (e.g. `morphometrics make_meshes config.yml`). The old `python <script>.py ...` invocations still work via deprecation shims for now — see the [migration table](#migrating-from-the-old-script-commands). Two config keys were also renamed: `data_dir` is now `seg_dir`, and `max_triangles` is now `simplify_max_triangles` (only used when `simplify: true`); `make_meshes` warns if it detects the old names.
 2. Run the surface reconstruction for all segmentations: `morphometrics make_meshes config.yml`
-3. Run pycurv for each surface (recommended to run individually in parallel with a cluster): `morphometrics pycurv config.yml ${i}.surface.vtp`
+3. Run pycurv on the surfaces: `morphometrics pycurv config.yml` (or pass a single `${i}.surface.vtp` to process one at a time, e.g. for cluster jobs)
 
     You may see warnings aobut the curvature, this is normal and you do not need to worry.
 
