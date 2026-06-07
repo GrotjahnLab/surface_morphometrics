@@ -1226,6 +1226,23 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
 
     print(f"Found {len(mrc_files)} tomogram(s) to process")
 
+    # Mesh refinement improves every surface, but it is by far the slowest step in
+    # the pipeline: it re-runs pycurv internally on each Gaussian-fitting iteration
+    # (the cross-correlation iterations skip the slow normal-vector voting, and the
+    # final iteration always runs full pycurv).
+    full_pycurv_iters = sorted(i for i in all_iters if i not in xcorr_iterations or i == iterations)
+    n_full = len(full_pycurv_iters)
+    print("")
+    print("=" * 70)
+    print("NOTE: Mesh refinement is the slowest step in the pipeline. It improves")
+    print(f"      every surface, but it runs pycurv internally on {n_full} of "
+          f"{iterations} iterations")
+    print(f"      (iters {full_pycurv_iters}), so budget very roughly {n_full}x the time of one")
+    print(f"      `morphometrics pycurv` run per surface, x{len(mrc_files)} tomogram(s).")
+    print("      For large datasets, run one surface at a time (--tomogram / --mrc)")
+    print("      in parallel on a cluster, or set aside time for the full run.")
+    print("=" * 70)
+
     for mrc_file in mrc_files:
         mrc_basename = Path(mrc_file).stem
         print(f"\n{'='*60}")
@@ -1765,7 +1782,7 @@ def refine_mesh_cli(configfile, iterations, damping, output, component, tomogram
         smooth_offsets=smooth_arg,
         laplacian_iterations=laplacian,
         laplacian_lambda=laplacian_lambda,
-        lowpass_sigma=lowpass
+        lowpass_sigma=lowpass,
     )
 
     print("\n" + "="*60)
