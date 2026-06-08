@@ -93,39 +93,63 @@ def face_values(feature, faces, cell_arrays, point_arrays):
 # ---------------------------------------------------------------------------
 
 
-def write_colormap_png(path, cmap, width=256, height=8):
-    """Write a horizontal colormap strip image (low value -> left)."""
+# Colormap texture layout: a `_RAMP_W`-pixel value ramp, optionally followed by a
+# `_NAN_W`-pixel solid swatch that NaN faces sample.
+_RAMP_W = 256
+_NAN_W = 16
+
+
+def write_colormap_png(path, cmap, nan_color=None, height=8):
+    """Write a horizontal colormap strip image (low value -> left).
+
+    If nan_color is given, a solid swatch of that color is appended on the right
+    for NaN/unmeasured faces.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.colors import to_rgb
 
-    ramp = np.linspace(0.0, 1.0, width)
-    rgba = plt.get_cmap(cmap)(ramp)            # (width, 4)
-    strip = np.tile(rgba[np.newaxis, :, :3], (height, 1, 1))  # (height, width, 3)
+    ramp = plt.get_cmap(cmap)(np.linspace(0.0, 1.0, _RAMP_W))[:, :3]  # (_RAMP_W, 3)
+    if nan_color is not None:
+        nan_rgb = np.array(to_rgb(nan_color))
+        ramp = np.vstack([ramp, np.tile(nan_rgb, (_NAN_W, 1))])
+    strip = np.tile(ramp[np.newaxis, :, :], (height, 1, 1))
     plt.imsave(path, strip)
 
 
 def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
-                  vmin=None, vmax=None):
+                  vmin=None, vmax=None, nan_color="lightgrey"):
     """Write <out_base>.obj/.mtl/.png, flat-coloring each face by `values`.
 
+    NaN (unmeasured) faces are colored `nan_color` (a distinct swatch appended to
+    the colormap); pass nan_color=None to instead map them to the low end.
     Returns (vmin, vmax) actually used.
     """
     values = np.asarray(values, dtype=float)
-    finite = values[np.isfinite(values)]
+    finite_mask = np.isfinite(values)
+    finite = values[finite_mask]
     if vmin is None:
         vmin = float(np.percentile(finite, 2)) if finite.size else 0.0
     if vmax is None:
         vmax = float(np.percentile(finite, 98)) if finite.size else 1.0
     span = (vmax - vmin) or 1.0
-    # Normalized value per face -> u texture coordinate (NaN -> low end).
-    u = np.clip((np.nan_to_num(values, nan=vmin) - vmin) / span, 0.0, 1.0)
+    # Map values to a texture u-coordinate. The colormap image is the ramp plus,
+    # when nan_color is set, a trailing swatch that NaN faces sample.
+    use_nan = nan_color is not None
+    total_w = _RAMP_W + (_NAN_W if use_nan else 0)
+    t = np.clip((np.nan_to_num(values, nan=vmin) - vmin) / span, 0.0, 1.0)
+    u = (t * (_RAMP_W - 1) + 0.5) / total_w
+    if use_nan:
+        u[~finite_mask] = (_RAMP_W + _NAN_W / 2.0) / total_w
+    else:
+        u[~finite_mask] = 0.5 / total_w
 
     obj_path = out_base + ".obj"
     mtl_path = out_base + ".mtl"
     png_path = out_base + ".png"
     mtl_name = "quant_" + feature
-    write_colormap_png(png_path, cmap)
+    write_colormap_png(png_path, cmap, nan_color=nan_color if use_nan else None)
 
     with open(mtl_path, "w") as m:
         m.write(f"# colormap material for '{feature}' ({cmap}, range [{vmin:.4g}, {vmax:.4g}])\n")
@@ -166,13 +190,15 @@ def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
 @click.option("--cmap", default="viridis", show_default=True, help="Matplotlib colormap name.")
 @click.option("--vmin", type=float, default=None, help="Lower color limit (default: 2nd percentile).")
 @click.option("--vmax", type=float, default=None, help="Upper color limit (default: 98th percentile).")
+@click.option("--nan-color", "nan_color", default="lightgrey", show_default=True,
+              help="Color for NaN/unmeasured faces (any matplotlib color); 'none' maps them to the low end.")
 @click.option("--pattern", default=None,
               help="Batch glob within work_dir (default: *.AVV_rh{radius_hit}.vtp).")
 @click.option("--output-dir", "output_dir", default=None,
               help="Output directory (defaults to the .vtp's directory / work_dir).")
 @click.option("--list-features", is_flag=True, default=False,
               help="List the colorable per-triangle/-vertex arrays in the VTP and exit.")
-def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, pattern, output_dir, list_features):
+def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features):
     """Export quantified surface(s) to colormapped OBJ + MTL for visualization.
 
     CONFIGFILE: path to config.yml.
@@ -197,6 +223,8 @@ def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, pattern, output_d
     if not feature:
         raise click.UsageError("--feature is required (or use --list-features to see options).")
 
+    nan_color_arg = None if str(nan_color).lower() == "none" else nan_color
+
     if vtp is not None:
         vtps = [vtp]
     else:
@@ -214,7 +242,8 @@ def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, pattern, output_d
         os.makedirs(dest, exist_ok=True)
         base = os.path.splitext(os.path.basename(vtp_file))[0]
         out_base = os.path.join(dest, f"{base}_{feature}")
-        lo, hi = write_obj_mtl(out_base, points, faces, values, feature, cmap, vmin, vmax)
+        lo, hi = write_obj_mtl(out_base, points, faces, values, feature, cmap, vmin, vmax,
+                               nan_color=nan_color_arg)
         print(f"  {os.path.basename(vtp_file)} -> {os.path.basename(out_base)}.obj "
               f"(range [{lo:.4g}, {hi:.4g}])")
 

@@ -216,6 +216,7 @@ morphometrics export_obj config.yml --feature thickness --cmap magma            
 - Writes `<base>_<feature>.obj`, `.mtl`, and `.png` (the colormap image referenced by the material via `map_Kd`).
 - Each **triangle is flat-colored by its value** via per-face UVs that sample a 1D colormap strip, so per-triangle quantifications are preserved exactly.
 - Color range defaults to the 2nd–98th percentile; override with `--vmin/--vmax`, and pick any matplotlib colormap with `--cmap`. Works on any per-triangle (or per-vertex, averaged) array — curvature, thickness, `*_dist`, patch ids, etc.
+- NaN/unmeasured triangles are colored a distinct swatch (`--nan-color`, default `lightgrey`; pass `--nan-color none` to map them to the low end of the colormap instead).
 - In Blender, import the OBJ (the MTL/PNG are picked up automatically) and the colormap shows as the material base color; switch to Material Preview/Rendered shading to see it.
 
 ### Migrating from the old script commands
