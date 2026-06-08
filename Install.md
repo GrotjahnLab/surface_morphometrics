@@ -54,13 +54,13 @@ python -m pip install pytest
 python -m pytest --pyargs pymeshlab
 ```
 
-4. Install pymeshlab to the conda environment:
+4. Install the surface_morphometrics package and the `morphometrics` command into the conda environment:
 ```bash
-pip install .
+pip install -e .
 ```
 
 5. You're ready to go!
-Try running the surface-morphometrics scripts on the example data. See the README for more details.
+Verify with `morphometrics --help`, then try the pipeline on the example data (start with `morphometrics new_config` to write a `config.yml`). See the README for more details.
 
 ## Container Implementation
 For older linux environments (such as CentOS7) Qt5 will not behave well. A container implementation is in progress (https://github.com/GrotjahnLab/surface_morphometrics/issues/10)

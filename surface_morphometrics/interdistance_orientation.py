@@ -16,7 +16,7 @@ from graph_tool import load_graph
 from scipy.spatial import cKDTree
 
 
-from intradistance_verticality import export_csv
+from .intradistance_verticality import export_csv
  
 
 def surface_to_surface(graph1, label1, graph2, label2, orientation=True, save_neighbor_index=True, exportcsv=True):

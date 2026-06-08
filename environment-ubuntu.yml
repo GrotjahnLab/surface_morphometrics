@@ -32,4 +32,6 @@ dependencies:
     - git+https://github.com/hemanthkapa/napari-vedo-bridge.git
     - napari-tomoslice
     - napari-timelapse-processor
+    # Install this toolkit and the `morphometrics` command (pulls remaining pip deps, e.g. starfile)
+    - -e .
 

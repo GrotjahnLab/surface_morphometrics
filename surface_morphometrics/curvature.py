@@ -12,7 +12,7 @@ import time
 import sys
 import click
 
-from curvature_calculation import new_workflow, extract_curvatures_after_new_workflow
+from .curvature_calculation import new_workflow, extract_curvatures_after_new_workflow
 
 @click.command()
 @click.argument('filename')

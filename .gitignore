@@ -10,6 +10,18 @@
 *.bak
 morphometrics/
 workdir/
+
+# Downloaded / extracted example dataset (from `morphometrics fetch_example`)
+/surface_morphometrics_example/
+/surface_morphometrics_example.tar.gz
+
+# Local scratch / backup directories
+/morphometrics_back/
+
+# Python build artifacts
+/build/
+/dist/
+*.egg-info/
 datadir/
 output_split/
 output/
