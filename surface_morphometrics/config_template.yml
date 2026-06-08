@@ -67,6 +67,7 @@ patch_analysis:
   random_seed: 0                 # Seed for reproducible random patches
   star_dir: "./star/"            # Directory of STAR files (batch mode)
   star_pattern: "{tomo}.star"    # How to find the STAR file for a tomogram basename
+  star_tomo_column: null         # Only needed for combined multi-tomogram STAR files: the column holding the tomogram/micrograph name (e.g. rlnMicrographName or rlnTomoName). When set, only rows containing the tomogram name are used. Leave null if each STAR holds a single tomogram.
   star_coord_columns: [rlnCoordinateX, rlnCoordinateY, rlnCoordinateZ]  # Particle coordinate columns
   star_pixelsize_column: rlnPixelSize  # Pixel size column (Angstrom/pixel)
   star_coords_in_pixels: true    # If true, multiply coordinates by the pixel-size column

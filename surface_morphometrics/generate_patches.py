@@ -19,6 +19,14 @@ Two usage modes:
 2. A single membrane graph + STAR file:
      generate_patches.py config.yml --graph TS1_IMM.AVV_rh8.gt --star TS1.star
 
+IMPORTANT - which particles are used:
+By default EVERY particle in the STAR file is matched against the membrane, so
+the STAR must contain only the particles for that one tomogram. If you have a
+combined STAR with particles from many tomograms, set `star_tomo_column` (the
+column holding the tomogram/micrograph name, e.g. rlnMicrographName or
+rlnTomoName) so the tool keeps only the rows whose value contains the tomogram
+name. `patch_id` then still refers to the row number in the original STAR.
+
 Vertex properties added to the graph (0 means "not in any patch"):
   patch_number, patch_center             - real patches (= STAR line ID)
   patch_center_distance, protein_distance
@@ -158,19 +166,24 @@ def choose_random_centers(triangle_xyz, n_centers, min_distance, rng,
 # ---------------------------------------------------------------------------
 
 
-def load_particle_coordinates(star_file, pa_config, angstroms):
-    """Load particle coordinates from a STAR file, returning (df, coords_nm).
+def load_particle_coordinates(star_file, pa_config, angstroms, tomo_name=None):
+    """Load particle coordinates from a STAR file.
 
+    Returns (df, coords_nm, line_ids), where line_ids are the 1-based row numbers
+    in the original STAR (stable even when the STAR is filtered to one tomogram).
     coords are converted to the membrane's units: nm by default (Angstrom values
     divided by 10), or left in Angstrom when `angstroms` is True.
+
+    If `star_tomo_column` is set in the config and `tomo_name` is given, only rows
+    whose value in that column contains `tomo_name` are kept (for combined STAR
+    files spanning many tomograms).
     """
     import starfile
     star = starfile.read(star_file)
+    coord_cols = pa_config.get("star_coord_columns",
+                               ["rlnCoordinateX", "rlnCoordinateY", "rlnCoordinateZ"])
     # starfile.read can return a dict of blocks; take the particles block.
     if isinstance(star, dict):
-        # Prefer a block that has the coordinate columns.
-        coord_cols = pa_config.get("star_coord_columns",
-                                   ["rlnCoordinateX", "rlnCoordinateY", "rlnCoordinateZ"])
         block = None
         for value in star.values():
             if all(c in value.columns for c in coord_cols):
@@ -181,10 +194,25 @@ def load_particle_coordinates(star_file, pa_config, angstroms):
             block = list(star.values())[-1]
         star = block
 
-    coord_cols = pa_config.get("star_coord_columns",
-                               ["rlnCoordinateX", "rlnCoordinateY", "rlnCoordinateZ"])
-    coords = star[coord_cols].to_numpy(dtype=float)
+    # 1-based original row numbers, preserved across filtering for stable patch_id.
+    star = star.reset_index(drop=True)
+    line_ids = star.index.to_numpy() + 1
 
+    # Optionally keep only rows belonging to this tomogram (combined STAR files).
+    tomo_col = pa_config.get("star_tomo_column")
+    if tomo_col and tomo_name:
+        if tomo_col not in star.columns:
+            print(f"  WARNING: star_tomo_column '{tomo_col}' not found in STAR; "
+                  f"using all {len(star)} particles.")
+        else:
+            mask = star[tomo_col].astype(str).str.contains(tomo_name, regex=False).to_numpy()
+            n_before = len(star)
+            star = star[mask]
+            line_ids = line_ids[mask]
+            print(f"  Filtered STAR by {tomo_col} containing '{tomo_name}': "
+                  f"{len(star)}/{n_before} particles")
+
+    coords = star[coord_cols].to_numpy(dtype=float)
     if pa_config.get("star_coords_in_pixels", True):
         px_col = pa_config.get("star_pixelsize_column", "rlnPixelSize")
         pixel_size = star[px_col].to_numpy(dtype=float)  # Angstrom/pixel
@@ -192,7 +220,8 @@ def load_particle_coordinates(star_file, pa_config, angstroms):
     # coords are now in Angstrom; convert to nm unless the surfaces are in Angstrom.
     if not angstroms:
         coords = coords / 10.0
-    return star, coords
+    star = star.reset_index(drop=True)
+    return star, coords, line_ids
 
 
 # ---------------------------------------------------------------------------
@@ -201,8 +230,13 @@ def load_particle_coordinates(star_file, pa_config, angstroms):
 
 
 def generate_patches_single(graph_file, star_file, pa_config, radius_hit,
-                            angstroms, output_dir, label, generate_random, seed):
-    """Generate patches for one membrane graph + STAR file."""
+                            angstroms, output_dir, label, generate_random, seed,
+                            tomo_name=None):
+    """Generate patches for one membrane graph + STAR file.
+
+    tomo_name, with `star_tomo_column` in the config, restricts a combined STAR
+    file to the rows belonging to this tomogram.
+    """
     from pycurv import TriangleGraph, io
     from graph_tool import load_graph
 
@@ -221,15 +255,19 @@ def generate_patches_single(graph_file, star_file, pa_config, radius_hit,
     n_triangles = triangle_xyz.shape[0]
     print(f"  {n_triangles} triangles")
 
-    star, particle_xyz = load_particle_coordinates(star_file, pa_config, angstroms)
+    star, particle_xyz, line_ids = load_particle_coordinates(
+        star_file, pa_config, angstroms, tomo_name=tomo_name)
     n_particles = particle_xyz.shape[0]
     print(f"  {n_particles} particles")
+    if n_particles == 0:
+        print("  No particles to process for this graph; skipping.")
+        return
 
     # Nearest triangle for every particle (for STAR annotation + patch centers).
     min_d, min_i = nearest_triangle(triangle_xyz, particle_xyz)
 
-    # Patch id = 1-based STAR line id (0 reserved for "no patch").
-    line_ids = np.arange(1, n_particles + 1, dtype=np.int64)
+    # Patch id = 1-based row number in the original STAR (0 reserved for "no patch").
+    line_ids = line_ids.astype(np.int64)
 
     # Annotate the STAR with mesh distance and nearest-triangle id (all particles).
     if annotate_star:
@@ -327,16 +365,29 @@ def _set_float_vp(tg, name, array):
               help="Skip generation of random control patches.")
 @click.option("--seed", type=int, default=None,
               help="Random seed (defaults to patch_analysis.random_seed).")
+@click.option("--star-tomo-column", "star_tomo_column", default=None,
+              help="STAR column holding the tomogram/micrograph name; if set, a "
+                   "combined STAR is filtered to rows matching the tomogram "
+                   "(overrides patch_analysis.star_tomo_column).")
+@click.option("--tomo-name", "tomo_name", default=None,
+              help="With --graph: the tomogram name to match in --star-tomo-column "
+                   "(default: inferred from the graph filename).")
 def generate_patches_cli(configfile, graph_file, star_file, label, output_dir,
-                         no_random, seed):
+                         no_random, seed, star_tomo_column, tomo_name):
     """Generate protein-centered membrane patches from a STAR file.
 
     CONFIGFILE: path to config.yml.
+
+    By default every particle in the STAR is matched against the membrane, so the
+    STAR must hold only that tomogram's particles. For a combined multi-tomogram
+    STAR, set star_tomo_column (config or --star-tomo-column) to filter by tomogram.
     """
     with open(configfile) as f:
         config = yaml.safe_load(f)
 
     pa_config = config.get("patch_analysis", {})
+    if star_tomo_column is not None:
+        pa_config = {**pa_config, "star_tomo_column": star_tomo_column}
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
         work_dir += "/"
@@ -365,8 +416,14 @@ def generate_patches_cli(configfile, graph_file, star_file, label, output_dir,
     if graph_file is not None:
         if star_file is None:
             raise click.UsageError("--star is required when --graph is given.")
+        # Infer the tomogram name from the graph filename if not given (used only
+        # when star_tomo_column is set, to filter a combined STAR).
+        single_tomo = tomo_name
+        if single_tomo is None:
+            single_tomo = os.path.basename(graph_file).split(f"_{label}")[0]
         generate_patches_single(graph_file, star_file, pa_config, radius_hit,
-                                angstroms, output_dir, label, generate_random, seed)
+                                angstroms, output_dir, label, generate_random, seed,
+                                tomo_name=single_tomo)
         return
 
     if star_file is not None:
@@ -392,7 +449,8 @@ def generate_patches_cli(configfile, graph_file, star_file, label, output_dir,
             print(f"  SKIP {tomo}: no STAR file at {spath}")
             continue
         generate_patches_single(gpath, spath, pa_config, radius_hit, angstroms,
-                                output_dir, label, generate_random, seed)
+                                output_dir, label, generate_random, seed,
+                                tomo_name=tomo)
 
 
 if __name__ == "__main__":
