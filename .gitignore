@@ -10,6 +10,10 @@
 *.bak
 morphometrics/
 workdir/
+
+# Downloaded / extracted example dataset (from `morphometrics fetch_example`)
+/surface_morphometrics_example/
+/surface_morphometrics_example.tar.gz
 datadir/
 output_split/
 output/
