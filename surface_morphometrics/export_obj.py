@@ -1,0 +1,223 @@
+#! /usr/bin/env python
+"""Export a quantified surface (.vtp) to a colormapped OBJ + MTL for Blender etc.
+
+A surface mesh from the pipeline carries per-triangle quantifications (curvature,
+thickness, distances, patch ids, ...). This writes the geometry as a Wavefront
+OBJ, with one chosen quantification baked into the surface color via a 1D
+colormap image referenced from a paired MTL. Each triangle is flat-colored by its
+value (per-triangle data is preserved exactly through per-face UVs), so the result
+drops straight into Blender, MeshLab, etc.
+
+Three files are written per surface (next to the .vtp or in --output-dir):
+  <base>_<feature>.obj   geometry + per-face UVs + `mtllib`/`usemtl`
+  <base>_<feature>.mtl   material referencing the colormap image via map_Kd
+  <base>_<feature>.png   the colormap strip (the texture)
+
+Usage:
+  morphometrics export_obj config.yml surface.AVV_rh9.vtp --feature curvedness_VV
+  morphometrics export_obj config.yml surface.vtp --list-features
+  morphometrics export_obj config.yml --feature thickness          # batch over work_dir
+"""
+
+__author__ = "Benjamin Barad"
+__email__ = "benjamin.barad@gmail.com"
+__license__ = "GPLv3"
+
+import os
+from glob import glob
+
+import click
+import numpy as np
+import yaml
+
+
+# ---------------------------------------------------------------------------
+# VTP reading (vtk)
+# ---------------------------------------------------------------------------
+
+
+def read_surface(vtp_file):
+    """Read a triangle-mesh .vtp.
+
+    Returns (points (N,3), faces (M,3) int, cell_arrays, point_arrays) where the
+    *_arrays are dicts {name: (n, ) float array} of single-component scalars.
+    """
+    import vtk
+    from vtk.util.numpy_support import vtk_to_numpy
+
+    reader = vtk.vtkXMLPolyDataReader()
+    reader.SetFileName(vtp_file)
+    reader.Update()
+    poly = reader.GetOutput()
+
+    points = vtk_to_numpy(poly.GetPoints().GetData()).astype(float)
+    conn = vtk_to_numpy(poly.GetPolys().GetData())
+    quads = conn.reshape(-1, 4)
+    if not np.all(quads[:, 0] == 3):
+        raise click.ClickException(
+            f"{os.path.basename(vtp_file)} contains non-triangular faces; "
+            "only triangle meshes are supported."
+        )
+    faces = quads[:, 1:4].astype(np.int64)
+
+    def _scalars(field_data):
+        out = {}
+        for i in range(field_data.GetNumberOfArrays()):
+            name = field_data.GetArrayName(i)
+            arr = field_data.GetArray(i)
+            if arr is None or arr.GetNumberOfComponents() != 1:
+                continue
+            out[name] = vtk_to_numpy(arr).astype(float)
+        return out
+
+    cell_arrays = _scalars(poly.GetCellData())
+    point_arrays = _scalars(poly.GetPointData())
+    return points, faces, cell_arrays, point_arrays
+
+
+def face_values(feature, faces, cell_arrays, point_arrays):
+    """Per-face values for `feature` (cell data used directly; point data averaged)."""
+    if feature in cell_arrays:
+        return cell_arrays[feature]
+    if feature in point_arrays:
+        pv = point_arrays[feature]
+        return np.nanmean(pv[faces], axis=1)
+    available = sorted(set(cell_arrays) | set(point_arrays))
+    raise click.ClickException(
+        f"Feature '{feature}' not found. Available: {', '.join(available) or '(none)'}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# OBJ / MTL / colormap writing (pure; no vtk needed)
+# ---------------------------------------------------------------------------
+
+
+def write_colormap_png(path, cmap, width=256, height=8):
+    """Write a horizontal colormap strip image (low value -> left)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ramp = np.linspace(0.0, 1.0, width)
+    rgba = plt.get_cmap(cmap)(ramp)            # (width, 4)
+    strip = np.tile(rgba[np.newaxis, :, :3], (height, 1, 1))  # (height, width, 3)
+    plt.imsave(path, strip)
+
+
+def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
+                  vmin=None, vmax=None):
+    """Write <out_base>.obj/.mtl/.png, flat-coloring each face by `values`.
+
+    Returns (vmin, vmax) actually used.
+    """
+    values = np.asarray(values, dtype=float)
+    finite = values[np.isfinite(values)]
+    if vmin is None:
+        vmin = float(np.percentile(finite, 2)) if finite.size else 0.0
+    if vmax is None:
+        vmax = float(np.percentile(finite, 98)) if finite.size else 1.0
+    span = (vmax - vmin) or 1.0
+    # Normalized value per face -> u texture coordinate (NaN -> low end).
+    u = np.clip((np.nan_to_num(values, nan=vmin) - vmin) / span, 0.0, 1.0)
+
+    obj_path = out_base + ".obj"
+    mtl_path = out_base + ".mtl"
+    png_path = out_base + ".png"
+    mtl_name = "quant_" + feature
+    write_colormap_png(png_path, cmap)
+
+    with open(mtl_path, "w") as m:
+        m.write(f"# colormap material for '{feature}' ({cmap}, range [{vmin:.4g}, {vmax:.4g}])\n")
+        m.write(f"newmtl {mtl_name}\n")
+        m.write("Ka 1 1 1\nKd 1 1 1\nKs 0 0 0\nd 1\nillum 1\n")
+        m.write(f"map_Kd {os.path.basename(png_path)}\n")
+
+    with open(obj_path, "w") as o:
+        o.write("# Generated by `morphometrics export_obj`\n")
+        o.write(f"# feature: {feature}  range: [{vmin:.6g}, {vmax:.6g}]  cmap: {cmap}\n")
+        o.write(f"mtllib {os.path.basename(mtl_path)}\n")
+        o.write(f"o {os.path.basename(out_base)}\n")
+        o.write(f"usemtl {mtl_name}\n")
+        # Vertices
+        for p in points:
+            o.write(f"v {p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
+        # One texture coord per face (sampling the colormap at the face value)
+        for uf in u:
+            o.write(f"vt {uf:.6f} 0.5\n")
+        # Faces: all three corners of face k share that face's vt index (k+1)
+        for k, f in enumerate(faces):
+            vt = k + 1
+            a, b, c = (f + 1)
+            o.write(f"f {a}/{vt} {b}/{vt} {c}/{vt}\n")
+    return vmin, vmax
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+@click.command(name="export_obj")
+@click.argument("configfile", type=click.Path(exists=True))
+@click.argument("vtp", required=False, default=None)
+@click.option("--feature", default=None,
+              help="Per-triangle quantification to colormap (e.g. curvedness_VV, thickness).")
+@click.option("--cmap", default="viridis", show_default=True, help="Matplotlib colormap name.")
+@click.option("--vmin", type=float, default=None, help="Lower color limit (default: 2nd percentile).")
+@click.option("--vmax", type=float, default=None, help="Upper color limit (default: 98th percentile).")
+@click.option("--pattern", default=None,
+              help="Batch glob within work_dir (default: *.AVV_rh{radius_hit}.vtp).")
+@click.option("--output-dir", "output_dir", default=None,
+              help="Output directory (defaults to the .vtp's directory / work_dir).")
+@click.option("--list-features", is_flag=True, default=False,
+              help="List the colorable per-triangle/-vertex arrays in the VTP and exit.")
+def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, pattern, output_dir, list_features):
+    """Export quantified surface(s) to colormapped OBJ + MTL for visualization.
+
+    CONFIGFILE: path to config.yml.
+    VTP: a surface .vtp to export; if omitted, all matching surfaces in work_dir.
+    """
+    with open(configfile) as f:
+        config = yaml.safe_load(f)
+    work_dir = config.get("work_dir", config.get("seg_dir", "./"))
+    if not work_dir.endswith("/"):
+        work_dir += "/"
+    radius_hit = config.get("curvature_measurements", {}).get("radius_hit", 9)
+
+    # --list-features inspects one VTP and exits.
+    if list_features:
+        if vtp is None:
+            raise click.UsageError("Provide a VTP file to --list-features.")
+        _, _, cell_arrays, point_arrays = read_surface(vtp)
+        click.echo(f"Per-triangle (cell) arrays: {', '.join(sorted(cell_arrays)) or '(none)'}")
+        click.echo(f"Per-vertex (point) arrays:  {', '.join(sorted(point_arrays)) or '(none)'}")
+        return
+
+    if not feature:
+        raise click.UsageError("--feature is required (or use --list-features to see options).")
+
+    if vtp is not None:
+        vtps = [vtp]
+    else:
+        pattern = pattern or f"*.AVV_rh{radius_hit}.vtp"
+        vtps = sorted(glob(work_dir + pattern))
+        if not vtps:
+            print(f"No surfaces matching {work_dir}{pattern}")
+            return
+    print(f"Exporting {len(vtps)} surface(s), feature '{feature}', cmap '{cmap}'")
+
+    for vtp_file in vtps:
+        points, faces, cell_arrays, point_arrays = read_surface(vtp_file)
+        values = face_values(feature, faces, cell_arrays, point_arrays)
+        dest = output_dir or os.path.dirname(os.path.abspath(vtp_file))
+        os.makedirs(dest, exist_ok=True)
+        base = os.path.splitext(os.path.basename(vtp_file))[0]
+        out_base = os.path.join(dest, f"{base}_{feature}")
+        lo, hi = write_obj_mtl(out_base, points, faces, values, feature, cmap, vmin, vmax)
+        print(f"  {os.path.basename(vtp_file)} -> {os.path.basename(out_base)}.obj "
+              f"(range [{lo:.4g}, {hi:.4g}])")
+
+
+if __name__ == "__main__":
+    export_obj_cli()

@@ -51,6 +51,8 @@ _LAZY_COMMANDS = {
                         "Split a graph into per-region files by label or property range."),
     "patch_statistics": ("surface_morphometrics.patch_statistics:patch_statistics_cli",
                          "Area-weighted per-region (patch/component) statistics from CSVs."),
+    "export_obj": ("surface_morphometrics.export_obj:export_obj_cli",
+                   "Export a quantified surface to a colormapped OBJ + MTL (Blender etc.)."),
 }
 
 # How commands are grouped and ordered in `--help` (instead of alphabetically),
@@ -65,6 +67,7 @@ _SECTIONS = [
     ("Statistics & plotting", ["stats", "histogram", "hist2d"]),
     ("Patch & region analysis (optional)",
      ["generate_patches", "label_components", "extract_patches", "patch_statistics"]),
+    ("Export & visualization", ["export_obj"]),
 ]
 
 # Printed after a subcommand finishes successfully, to point at the next step.

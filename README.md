@@ -205,6 +205,19 @@ The `--property NAME --min/--max` mode works on any per-triangle property (dista
 
 > This workflow is ported from [GrotjahnLab/patch_analysis](https://github.com/GrotjahnLab/patch_analysis). Still to come: the flipper-based line-scan sampling.
 
+### Exporting surfaces for Blender / visualization
+`morphometrics export_obj` converts a quantified surface `.vtp` into a Wavefront **OBJ + MTL** with one quantification baked into the surface color, ready to drop into Blender, MeshLab, etc.
+
+```bash
+morphometrics export_obj config.yml TS1_IMM.AVV_rh9.vtp --list-features          # see colorable arrays
+morphometrics export_obj config.yml TS1_IMM.AVV_rh9.vtp --feature curvedness_VV  # one surface
+morphometrics export_obj config.yml --feature thickness --cmap magma             # batch over work_dir
+```
+- Writes `<base>_<feature>.obj`, `.mtl`, and `.png` (the colormap image referenced by the material via `map_Kd`).
+- Each **triangle is flat-colored by its value** via per-face UVs that sample a 1D colormap strip, so per-triangle quantifications are preserved exactly.
+- Color range defaults to the 2nd–98th percentile; override with `--vmin/--vmax`, and pick any matplotlib colormap with `--cmap`. Works on any per-triangle (or per-vertex, averaged) array — curvature, thickness, `*_dist`, patch ids, etc.
+- In Blender, import the OBJ (the MTL/PNG are picked up automatically) and the colormap shows as the material base color; switch to Material Preview/Rendered shading to see it.
+
 ### Migrating from the old script commands
 The toolkit is now an installable package exposed through a single `morphometrics` command (installed by `conda env create`, or `pip install -e .` inside the env). The old per-script invocations are kept working for now via deprecation shims that print a warning and forward to the new command; they will be removed in a future release.
 
