@@ -24,8 +24,11 @@ By default EVERY particle in the STAR file is matched against the membrane, so
 the STAR must contain only the particles for that one tomogram. If you have a
 combined STAR with particles from many tomograms, set `star_tomo_column` (the
 column holding the tomogram/micrograph name, e.g. rlnMicrographName or
-rlnTomoName) so the tool keeps only the rows whose value contains the tomogram
-name. `patch_id` then still refers to the row number in the original STAR.
+rlnTomoName) so the tool keeps only the rows that match the tomogram. Matching is
+by basename (bidirectional substring), so it tolerates directory paths, .mrc
+extensions, and pixel-size/bin suffixes (e.g. `TS_004` matches
+`/data/TS_004.mrc_6.65Apx.mrc`). `patch_id` still refers to the row number in the
+original STAR.
 
 Vertex properties added to the graph (0 means "not in any patch"):
   patch_number, patch_center             - real patches (= STAR line ID)
@@ -166,6 +169,29 @@ def choose_random_centers(triangle_xyz, n_centers, min_distance, rng,
 # ---------------------------------------------------------------------------
 
 
+def _tomo_stem(name):
+    """Basename of a tomogram reference, minus directory and a trailing .mrc."""
+    base = os.path.basename(str(name).strip().replace("\\", "/").rstrip("/"))
+    if base.lower().endswith(".mrc"):
+        base = base[:-4]
+    return base
+
+
+def tomo_name_matches(star_value, tomo_name):
+    """Whether a STAR tomogram/micrograph value refers to `tomo_name`.
+
+    Matches by basename with bidirectional substring, so it tolerates directory
+    paths, .mrc extensions, and pixel-size / bin suffixes (e.g. a graph named
+    `TS_004` matching a STAR micrograph `/data/TS_004.mrc_6.65Apx.mrc`, or vice
+    versa).
+    """
+    sv = _tomo_stem(star_value)
+    tn = _tomo_stem(tomo_name)
+    if not sv or not tn:
+        return False
+    return tn in sv or sv in tn
+
+
 def load_particle_coordinates(star_file, pa_config, angstroms, tomo_name=None):
     """Load particle coordinates from a STAR file.
 
@@ -205,12 +231,12 @@ def load_particle_coordinates(star_file, pa_config, angstroms, tomo_name=None):
             print(f"  WARNING: star_tomo_column '{tomo_col}' not found in STAR; "
                   f"using all {len(star)} particles.")
         else:
-            mask = star[tomo_col].astype(str).str.contains(tomo_name, regex=False).to_numpy()
+            mask = np.array([tomo_name_matches(v, tomo_name) for v in star[tomo_col]])
             n_before = len(star)
             star = star[mask]
             line_ids = line_ids[mask]
-            print(f"  Filtered STAR by {tomo_col} containing '{tomo_name}': "
-                  f"{len(star)}/{n_before} particles")
+            print(f"  Filtered STAR by {tomo_col} matching tomogram '{tomo_name}' "
+                  f"(basename match): {len(star)}/{n_before} particles")
 
     coords = star[coord_cols].to_numpy(dtype=float)
     if pa_config.get("star_coords_in_pixels", True):
