@@ -57,6 +57,23 @@ thickness_measurements:
     - IMM
     - ER
 
+# PATCH ANALYSIS (used by generate_patches.py and label_connected_components.py)
+patch_analysis:
+  membrane_label: IMM            # Which segmentation_values label to place patches on (batch mode)
+  patch_radius: 12               # nm; triangles within this distance of a center join the patch
+  particle_max_distance: 24      # nm; skip patches when the particle is farther than this from the membrane. Set to null to disable.
+  generate_random: true          # Also generate matched random control patches
+  random_min_distance: 12        # nm; minimum spacing between random patch centers
+  random_seed: 0                 # Seed for reproducible random patches
+  star_dir: "./star/"            # Directory of STAR files (batch mode)
+  star_pattern: "{tomo}.star"    # How to find the STAR file for a tomogram basename
+  star_coord_columns: [rlnCoordinateX, rlnCoordinateY, rlnCoordinateZ]  # Particle coordinate columns
+  star_pixelsize_column: rlnPixelSize  # Pixel size column (Angstrom/pixel)
+  star_coords_in_pixels: true    # If true, multiply coordinates by the pixel-size column
+  annotate_star: true            # Write an annotated STAR with patch_id, mesh_distance, mesh_neighbor_id
+  min_component_size: 0          # label_connected_components.py: drop components smaller than this (0 = keep all)
+  statistics_properties: [curvedness_VV, thickness]  # patch_statistics.py: per-triangle properties to summarize per region
+
 # MESH REFINEMENT (used by refine_mesh.py)
 mesh_refinement:
   iterations: 6  # Number of refinement iterations

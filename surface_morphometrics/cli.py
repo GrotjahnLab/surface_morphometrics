@@ -43,6 +43,14 @@ _LAZY_COMMANDS = {
                   "Area-weighted histogram of one feature from one CSV."),
     "hist2d": ("surface_morphometrics.single_file_2d:main",
                "Area-weighted 2D histogram of two features from one CSV."),
+    "generate_patches": ("surface_morphometrics.generate_patches:generate_patches_cli",
+                         "Place protein-centered membrane patches from a STAR file (+ random controls)."),
+    "label_components": ("surface_morphometrics.label_connected_components:label_components_cli",
+                         "Label connected components of a graph for per-region stats."),
+    "extract_patches": ("surface_morphometrics.extract_patches:extract_patches_cli",
+                        "Split a graph into per-region files by label or property range."),
+    "patch_statistics": ("surface_morphometrics.patch_statistics:patch_statistics_cli",
+                         "Area-weighted per-region (patch/component) statistics from CSVs."),
 }
 
 # How commands are grouped and ordered in `--help` (instead of alphabetically),
@@ -55,6 +63,8 @@ _SECTIONS = [
     ("Optional mesh refinement (after pycurv, before distances)",
      ["refine_mesh", "accept_refinement"]),
     ("Statistics & plotting", ["stats", "histogram", "hist2d"]),
+    ("Patch & region analysis (optional)",
+     ["generate_patches", "label_components", "extract_patches", "patch_statistics"]),
 ]
 
 # Printed after a subcommand finishes successfully, to point at the next step.
@@ -69,6 +79,9 @@ _NEXT_HINTS = {
     "sample_density": "Next:  morphometrics measure_thickness config.yml",
     "measure_thickness": "Next:  assemble results with  morphometrics stats config.yml <name>,  or plot with  morphometrics histogram / hist2d",
     "stats": "Next:  plot features with  morphometrics histogram <file>.csv -n <feature>  or  morphometrics hist2d <file>.csv -n1 <a> -n2 <b>",
+    "generate_patches": "Next:  summarize per patch with  morphometrics patch_statistics config.yml  (or split files with  morphometrics extract_patches config.yml --by patch_number)",
+    "label_components": "Next:  summarize per component with  morphometrics patch_statistics config.yml --pattern '*_components.csv'",
+    "patch_statistics": "Next:  plot the per-region table with  morphometrics histogram / hist2d, or analyze patch_statistics.csv in pandas",
 }
 
 
