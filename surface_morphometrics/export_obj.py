@@ -198,7 +198,9 @@ def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
               help="Output directory (defaults to the .vtp's directory / work_dir).")
 @click.option("--list-features", is_flag=True, default=False,
               help="List the colorable per-triangle/-vertex arrays in the VTP and exit.")
-def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features):
+@click.option("--angstroms", is_flag=True, default=True,
+              help="Use Angstroms for the output units.")
+def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features, angstroms):
     """Export quantified surface(s) to colormapped OBJ + MTL for visualization.
 
     CONFIGFILE: path to config.yml.
@@ -237,6 +239,8 @@ def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, patter
 
     for vtp_file in vtps:
         points, faces, cell_arrays, point_arrays = read_surface(vtp_file)
+        if angstroms:
+            points *= 10  # Convert to Angstroms
         values = face_values(feature, faces, cell_arrays, point_arrays)
         dest = output_dir or os.path.dirname(os.path.abspath(vtp_file))
         os.makedirs(dest, exist_ok=True)
