@@ -2,8 +2,8 @@
 Membrane thickness measurement for surface morphometrics pipeline.
 
 Analyze density sampling CSV files to measure membrane thickness by fitting
-dual gaussians to density profiles. Generates per-triangle thickness measurements,
-refined surface files, and summary statistics.
+dual gaussians to density profiles. Writes per-triangle thickness back into the
+surface graph/.vtp/.csv in place, and generates summary statistics and plots.
 
 Pipeline Citation: Barad BA*, Medina M*, Fuentes D, Wiseman RL, Grotjahn DA.
 Quantifying organellar ultrastructure in cryo-electron tomography using a surface morphometrics pipeline.
@@ -106,7 +106,9 @@ from ._thickness_worker import init_worker, fit_triangle_chunk
 
 def process_single_surface(filename, average_radius, output_dir):
     """
-    Process a single thickness sampling file and generate plots and refined surfaces.
+    Process a single thickness sampling file: compute per-triangle thickness,
+    generate plots, and write the thickness back into the surface graph/.vtp/.csv
+    in place.
 
     Parameters
     ----------
@@ -138,7 +140,9 @@ def process_single_surface(filename, average_radius, output_dir):
     x = np.array([float(col) for col in thickness_set.columns])
     graph_file = filename[:-13] + ".gt"
     csv_outfile = filename[:-13] + ".csv"
-    graph_file_final = filename[:-13] + "_refined.gt"
+    # Thickness is written back into the original graph/surface in place
+    # (no separate "_refined" copies).
+    graph_file_final = graph_file
 
     tg = TriangleGraph()
     tg.graph = load_graph(graph_file)
@@ -160,7 +164,7 @@ def process_single_surface(filename, average_radius, output_dir):
     rad_avg = np.average(rad_curv, weights=areas)
     rad_std = np.sqrt(np.cov(rad_curv, aweights=areas))
 
-    surface_file = filename[:-13] + "_refined.vtp"
+    surface_file = filename[:-13] + ".vtp"
 
     fig2, ax2 = plt.subplots()
 
@@ -425,8 +429,8 @@ def measure_thickness_cli(configfile, output, average_radius):
     Measure membrane thickness from density sampling data.
 
     Fits dual gaussians to density profiles to estimate membrane thickness
-    for each triangle in the surface mesh. Generates refined surface files
-    with thickness properties and summary statistics.
+    for each triangle in the surface mesh. Writes the thickness properties back
+    into the surface graph/.vtp/.csv in place, with summary statistics and plots.
 
     CONFIGFILE: Path to the config.yml file
     """
