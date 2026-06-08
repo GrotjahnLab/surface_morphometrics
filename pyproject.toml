@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "surface-morphometrics"
-version = "0.2.0"
+version = "2.0.0b1"
 description = "Quantification of membrane surfaces segmented from cryo-ET or other volumetric imaging."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,6 +13,15 @@ authors = [
     { name = "Benjamin Barad", email = "benjamin.barad@gmail.com" },
 ]
 keywords = ["cryo-ET", "membrane", "morphometrics", "curvature", "segmentation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
 
 # Only pip-resolvable runtime dependencies are listed here. graph-tool,
 # pymeshlab, pycurv, and Pyto are provided by the conda environment
@@ -34,6 +43,11 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/GrotjahnLab/surface_morphometrics"
+Repository = "https://github.com/GrotjahnLab/surface_morphometrics"
+Issues = "https://github.com/GrotjahnLab/surface_morphometrics/issues"
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [project.scripts]
 morphometrics = "surface_morphometrics.cli:main"
