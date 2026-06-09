@@ -18,7 +18,10 @@ def test_find_mins_locates_left_and_right_minima():
 def test_gauss_is_unit_area_normal():
     x = np.linspace(-20, 20, 4001)
     y = mt.gauss(x, [0.0, 2.0])
-    assert np.isclose(np.trapz(y, x), 1.0, atol=1e-3)   # normalized to area 1
+    # trapezoidal area on a uniform grid (np.trapz was removed in NumPy 2.x)
+    dx = x[1] - x[0]
+    area = dx * (y.sum() - 0.5 * (y[0] + y[-1]))
+    assert np.isclose(area, 1.0, atol=1e-3)             # normalized to area 1
     assert np.isclose(x[np.argmax(y)], 0.0, atol=0.05)
 
 
