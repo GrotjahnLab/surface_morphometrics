@@ -39,6 +39,7 @@ dependencies = [
     "click",
     "mrcfile",
     "starfile",
+    "tqdm",
 ]
 
 [project.urls]

@@ -39,17 +39,23 @@ def find_mins(y):
     return left_side, right_side, y
 
 def sinc(x, A, mu, sigma):
+    """Squared sinc peak of amplitude A centered at mu with width parameter sigma."""
     return A * (np.sin(np.pi*(x-mu)*sigma) / (np.pi*(x-mu)*sigma))**2
 
-def dual_sinc(x,p): # p = a1, mu1, sigma1, a2, mu2, sigma2, offset
+def dual_sinc(x, p):
+    """Sum of two squared-sinc peaks plus an offset; p = (a1, mu1, s1, a2, mu2, s2, offset)."""
     return sinc(x,*p[0:3])+sinc(x,*p[3:6])+p[6]
 
-def gauss(x, p): # p[0]==mean, p[1]==stdev
+def gauss(x, p):
+    """Unit-area Gaussian; p = (mean, stdev)."""
     return 1.0/(p[1]*np.sqrt(2*np.pi))*np.exp(-(x-p[0])**2/(2*p[1]**2))
 
 def monogaussian(x, h, c, w):
+    """Single Gaussian of height h, center c, and width (sigma) w."""
     return h*np.exp(-(x-c)**2/(2*w**2))
-def dual_gaussian(x, h1, c1, w1, h2, c2, w2, o): # p = h1, c1, w1, h2, c2, w2, offset
+
+def dual_gaussian(x, h1, c1, w1, h2, c2, w2, o):
+    """Sum of two Gaussians plus offset o; params (h, c, w) per peak."""
     return monogaussian(x,h1,c1,w1)+monogaussian(x,h2,c2,w2)+o
 
 # Fit a gaussian to a series of 21 points and return the thickness
@@ -64,6 +70,7 @@ def fit_gaussian(x, thickness_set, skipedge=3):
 
 
 def func(x, *args):
+    """Sum of exponentials: sum_i a_i * exp(-b_i * x); args alternate (a1, b1, a2, b2, ...)."""
     x = x.reshape(-1, 1)
     a = np.array(args[0::2]).reshape(1, -1)
     b = np.array(args[1::2]).reshape(1, -1)

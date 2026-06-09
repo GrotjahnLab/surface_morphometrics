@@ -22,7 +22,6 @@ from pathlib import Path
 from sys import argv
 import yaml
 import click
-from graph_tool import load_graph
 
 
 def load_graph_data(filename, voxsize):
@@ -41,6 +40,8 @@ def load_graph_data(filename, voxsize):
     tuple
         xyz coordinates (3, n_vertices), n_v normal vectors (3, n_vertices), and graph object
     """
+    from graph_tool import load_graph  # lazy: keeps the module importable without graph-tool
+
     graph = load_graph(filename)
 
     # Get xyz coordinates and convert from surface units (nm) to voxel units
