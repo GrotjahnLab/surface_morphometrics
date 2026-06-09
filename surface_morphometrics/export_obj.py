@@ -229,10 +229,13 @@ def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
               help="Output directory (defaults to the .vtp's directory / work_dir).")
 @click.option("--list-features", is_flag=True, default=False,
               help="List the colorable per-triangle/-vertex arrays in the VTP and exit.")
-@click.option("--angstroms", type=bool, default=True, show_default=True,
-              help="Output coordinates in Angstroms by multiplying nm surfaces by 10. "
-                   "Pass `--angstroms false` to keep the surface's native units.")
-def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features, angstroms):
+@click.option("--scale_to_angstroms", "scale_to_angstroms", type=bool, default=True,
+              show_default=True,
+              help="Output coordinates in Angstroms. The surface's native units are read "
+                   "from surface_generation.angstroms in the config and coordinates are "
+                   "converted only as needed (nm surfaces are multiplied by 10). Pass "
+                   "`--scale_to_angstroms false` to output in nanometres instead.")
+def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features, scale_to_angstroms):
     """Export quantified surface(s) to colormapped OBJ + MTL for visualization.
 
     CONFIGFILE: path to config.yml.
@@ -244,6 +247,16 @@ def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, patter
     if not work_dir.endswith("/"):
         work_dir += "/"
     radius_hit = config.get("curvature_measurements", {}).get("radius_hit", 9)
+
+    # Decide the coordinate scale factor from the surface's native units (config)
+    # and the requested output units, so we never double-convert.
+    source_angstroms = config.get("surface_generation", {}).get("angstroms", False)
+    if scale_to_angstroms and not source_angstroms:
+        coord_scale = 10.0    # surface in nm -> Angstrom output
+    elif not scale_to_angstroms and source_angstroms:
+        coord_scale = 0.1     # surface in Angstrom -> nm output
+    else:
+        coord_scale = 1.0     # already in the requested units
 
     # --list-features inspects one VTP and exits.
     if list_features:
@@ -271,8 +284,8 @@ def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, patter
 
     for vtp_file in vtps:
         points, faces, cell_arrays, point_arrays = read_surface(vtp_file)
-        if angstroms:
-            points *= 10  # Convert to Angstroms
+        if coord_scale != 1.0:
+            points = points * coord_scale
         values = face_values(feature, faces, cell_arrays, point_arrays)
         dest = output_dir or os.path.dirname(os.path.abspath(vtp_file))
         os.makedirs(dest, exist_ok=True)

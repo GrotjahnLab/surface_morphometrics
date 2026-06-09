@@ -208,6 +208,8 @@ morphometrics export_obj config.yml --feature thickness --cmap magma            
 - Each triangle is flat-colored by its value via per-face UVs that sample a 1D colormap strip, so per-triangle values are preserved exactly.
 - Range defaults to the 2nd–98th percentile (`--vmin/--vmax`), any matplotlib `--cmap`; works on any per-triangle (or per-vertex, averaged) array.
 - NaN/unmeasured triangles get a distinct swatch (`--nan-color`, default `lightgrey`; `--nan-color none` maps them to the low end instead).
+- Output coordinates are in Angstroms by default; the surface's native units are read from `surface_generation.angstroms` and converted only as needed. Pass `--scale_to_angstroms false` to export in nanometres.
+- Vector properties are colorable by component (e.g. `--feature n_v_x`, `--feature OMM_dist`).
 - In Blender, import the OBJ (MTL/PNG are picked up automatically) and switch to Material Preview/Rendered shading.
 
 ---
