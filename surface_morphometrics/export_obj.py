@@ -40,7 +40,8 @@ def read_surface(vtp_file):
     """Read a triangle-mesh .vtp.
 
     Returns (points (N,3), faces (M,3) int, cell_arrays, point_arrays) where the
-    *_arrays are dicts {name: (n, ) float array} of single-component scalars.
+    *_arrays are dicts {name: (n,) float array}. Vector arrays are split into
+    per-component scalars (e.g. n_v -> n_v_x, n_v_y, n_v_z).
     """
     import vtk
     from vtk.util.numpy_support import vtk_to_numpy
@@ -79,13 +80,25 @@ def read_surface(vtp_file):
     faces = quads[:, 1:4].astype(np.int64)
 
     def _scalars(field_data):
+        # Single-component arrays are kept as-is; vector arrays are split into
+        # per-component scalars named like the CSV export (e.g. n_v -> n_v_x/_y/_z),
+        # so vector components can be used as the colored feature.
         out = {}
         for i in range(field_data.GetNumberOfArrays()):
             name = field_data.GetArrayName(i)
             arr = field_data.GetArray(i)
-            if arr is None or arr.GetNumberOfComponents() != 1:
+            if arr is None:
                 continue
-            out[name] = vtk_to_numpy(arr).astype(float)
+            data = vtk_to_numpy(arr).astype(float)
+            ncomp = arr.GetNumberOfComponents()
+            if ncomp == 1:
+                out[name] = data
+            else:
+                data = data.reshape(-1, ncomp)
+                suffixes = (["_x", "_y", "_z"][:ncomp] if ncomp <= 3
+                            else [f"_{j}" for j in range(ncomp)])
+                for j, suffix in enumerate(suffixes):
+                    out[name + suffix] = data[:, j]
         return out
 
     cell_arrays = _scalars(poly.GetCellData())
@@ -216,8 +229,9 @@ def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
               help="Output directory (defaults to the .vtp's directory / work_dir).")
 @click.option("--list-features", is_flag=True, default=False,
               help="List the colorable per-triangle/-vertex arrays in the VTP and exit.")
-@click.option("--angstroms", is_flag=True, default=True,
-              help="Use Angstroms for the output units.")
+@click.option("--angstroms", type=bool, default=True, show_default=True,
+              help="Output coordinates in Angstroms by multiplying nm surfaces by 10. "
+                   "Pass `--angstroms false` to keep the surface's native units.")
 def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features, angstroms):
     """Export quantified surface(s) to colormapped OBJ + MTL for visualization.
 
