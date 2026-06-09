@@ -45,7 +45,7 @@ green_light = [0,1,0,.3]
 blue = [0,.3,1, .9]
 blue_light = [0,.3,1,.3]
 
-my_cmap = copy.copy(matplotlib.cm.get_cmap('viridis')) # copy the default cmap
+my_cmap = copy.copy(matplotlib.colormaps['viridis']) # copy the default cmap
 my_cmap.set_bad(my_cmap.colors[0])
 
 colors = [purple,green, blue]*4
