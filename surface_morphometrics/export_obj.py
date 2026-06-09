@@ -45,10 +45,28 @@ def read_surface(vtp_file):
     import vtk
     from vtk.util.numpy_support import vtk_to_numpy
 
-    reader = vtk.vtkXMLPolyDataReader()
+    # Auto-select the reader: XML PolyData (.vtp) vs legacy VTK polydata (some
+    # tools / older pycurv write classic ASCII/binary polydata, sometimes even
+    # with a .vtp extension, which the XML reader reads as an empty mesh).
+    if vtk.vtkXMLPolyDataReader().CanReadFile(vtp_file):
+        reader = vtk.vtkXMLPolyDataReader()
+    else:
+        reader = vtk.vtkPolyDataReader()
     reader.SetFileName(vtp_file)
     reader.Update()
     poly = reader.GetOutput()
+
+    if poly is None or poly.GetNumberOfPoints() == 0 or poly.GetPoints() is None:
+        raise click.ClickException(
+            f"Could not read a non-empty mesh from {os.path.basename(vtp_file)}. "
+            "The file may be empty (a surface that became empty after cleaning), "
+            "corrupt, or not a polydata .vtp."
+        )
+    if poly.GetPolys() is None or poly.GetNumberOfPolys() == 0:
+        raise click.ClickException(
+            f"{os.path.basename(vtp_file)} has points but no polygons (not a "
+            "triangle mesh); nothing to export."
+        )
 
     points = vtk_to_numpy(poly.GetPoints().GetData()).astype(float)
     conn = vtk_to_numpy(poly.GetPolys().GetData())
