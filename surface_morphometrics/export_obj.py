@@ -231,10 +231,10 @@ def write_obj_mtl(out_base, points, faces, values, feature, cmap="viridis",
               help="List the colorable per-triangle/-vertex arrays in the VTP and exit.")
 @click.option("--scale_to_angstroms", "scale_to_angstroms", type=bool, default=True,
               show_default=True,
-              help="Output coordinates in Angstroms. The surface's native units are read "
-                   "from surface_generation.angstroms in the config and coordinates are "
-                   "converted only as needed (nm surfaces are multiplied by 10). Pass "
-                   "`--scale_to_angstroms false` to output in nanometres instead.")
+              help="Output coordinates in Angstroms (default, since downstream tools like "
+                   "ChimeraX and Blender molecular nodes work in Angstrom space). The "
+                   "surface's native units are read from surface_generation.angstroms and "
+                   "coordinates are converted only as needed. Pass false to output in nm.")
 def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, pattern, output_dir, list_features, scale_to_angstroms):
     """Export quantified surface(s) to colormapped OBJ + MTL for visualization.
 
