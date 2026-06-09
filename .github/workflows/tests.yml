@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main, packaging]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # graph-tool / pymeshlab / pycurv are conda-only and NOT needed by the
+      # test suite (those imports are lazy), so a plain pip install of the
+      # package + its pip dependencies is enough to run the pure-logic tests.
+      - name: Install package and test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run tests
+        run: pytest -q
