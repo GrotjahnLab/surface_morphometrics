@@ -17,13 +17,20 @@ Barad BA, Grotjahn DA. Surface Morphometrics reveals local membrane thickness va
 subcompartments. J Cell Biol 2025.
 """
 
+# Cap OpenMP to a single thread BEFORE importing graph-tool / pycurv. graph-tool
+# loads OpenMP, and pycurv runs fork-based multiprocessing passes (fork is the
+# default on Linux); forking a process that already has OpenMP threads running
+# deadlocks -- the "First pass: running pycurv" hang. Mirrors run_pycurv.py and
+# must run before the pycurv/graph_tool imports below.
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import numpy as np
 import pandas as pd
 import scipy.optimize as opt
 from scipy import spatial
 from glob import glob
 from pathlib import Path
-import os
 import yaml
 import click
 import vtk
