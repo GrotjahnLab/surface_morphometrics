@@ -8,6 +8,11 @@ This module is intentionally minimal to avoid importing heavy dependencies
 import numpy as np
 import scipy.optimize as opt
 
+# Bilayer fit-quality thresholds, shared by the per-triangle and global fits.
+R2_THRESHOLD = 0.6
+MIN_THICKNESS = 2.0   # nm (minimum accepted peak-to-peak leaflet separation)
+MAX_THICKNESS = 7.0   # nm (maximum accepted peak-to-peak leaflet separation)
+
 
 def _monogaussian(x, h, c, w):
     """Single gaussian function."""
@@ -22,6 +27,46 @@ def _dual_gaussian(x, h1, c1, w1, h2, c2, w2, o):
 def _monogaussian_with_offset(x, h, c, w, o):
     """Single Gaussian with offset for curve_fit."""
     return _monogaussian(x, h, c, w) + o
+
+
+def _dual_gaussian_centered(x, h1, w1, h2, w2, center, half_sep, o):
+    """Dual Gaussian parameterized by the bilayer center and half-separation.
+
+    The two leaflet peaks sit at ``center - half_sep`` and ``center + half_sep``,
+    so bounding ``half_sep`` to a physical range forces one Gaussian into each
+    leaflet -- the fit can never collapse both peaks into the same leaflet (the
+    failure mode of seeding both Gaussians at the global-max peak). ``center`` is
+    the membrane center (the refinement offset); ``2 * half_sep`` is the thickness.
+    """
+    return (_monogaussian(x, h1, center - half_sep, w1)
+            + _monogaussian(x, h2, center + half_sep, w2) + o)
+
+
+def _seed_bilayer_center(a, b, default_center=0.0):
+    """Estimate (center, half_sep) of a bilayer profile region for fit seeding.
+
+    Locates the two tallest peaks in the profile (the two leaflets) and seeds the
+    center at their midpoint and half_sep at half their separation. Falls back to
+    ``default_center`` if fewer than two peaks are found. ``half_sep`` is clamped
+    to the physical thickness range.
+    """
+    from scipy.signal import find_peaks
+
+    a = np.asarray(a)
+    b = np.asarray(b)
+    peaks, _ = find_peaks(b)
+    if len(peaks) >= 2:
+        # the two tallest peaks are the leaflets
+        tallest = peaks[np.argsort(b[peaks])[-2:]]
+        p_left, p_right = sorted(a[tallest])
+        center = 0.5 * (p_left + p_right)
+        half = 0.5 * (p_right - p_left)
+    elif len(peaks) == 1:
+        center, half = float(a[peaks[0]]), MIN_THICKNESS / 2.0
+    else:
+        center, half = default_center, MIN_THICKNESS / 2.0
+    half = float(np.clip(half, MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
+    return float(center), half
 
 
 def _compute_r_squared(y_true, y_pred):
@@ -394,10 +439,8 @@ def fit_triangle_chunk_offsets(indices):
         [(offset, sigma1, sigma2, fit_method), ...] for each triangle in chunk.
         fit_method: 0=failed, 1=dual_gaussian, 2=single_gaussian, 3=centroid, 4=xcorr
     """
-    # Fit quality thresholds
-    R2_THRESHOLD = 0.6
-    MIN_THICKNESS = 2.0  # nm
-    MAX_THICKNESS = 7.0  # nm
+    # Fit-quality thresholds are module-level constants (R2_THRESHOLD,
+    # MIN_THICKNESS, MAX_THICKNESS).
 
     # Sample spacing — constant across all triangles, computed once per chunk
     sample_spacing = _worker_x[1] - _worker_x[0] if len(_worker_x) > 1 else 1.0
@@ -479,30 +522,42 @@ def fit_triangle_chunk_offsets(indices):
         best_sigma2 = np.nan
         best_method = 0
 
-        # Step 1: Try dual Gaussian (unless monolayer mode)
+        # Step 1: Try dual Gaussian (unless monolayer mode). Parameterized by the
+        # bilayer center + half-separation so the two leaflet peaks are forced to
+        # opposite sides and cannot collapse into the same leaflet.
         if not _worker_monolayer:
             try:
                 if _worker_global_fit_params is not None:
-                    # Use global fit parameters for tighter, better-informed initialization
+                    # Seed from the (more reliable) global average fit.
                     c1_g, w1_g, c2_g, w2_g = _worker_global_fit_params
-                    p0 = [0.02, c1_g, w1_g, 0.02, c2_g, w2_g, 0]
-                    bounds = ([0.005, c1_g - 2, max(0.6, w1_g * 0.5), 0.005, c2_g - 2, max(0.6, w2_g * 0.5), -1],
-                              [0.04,  c1_g + 2, min(2.5, w1_g * 2.0), 0.04,  c2_g + 2, min(2.5, w2_g * 2.0),  1])
+                    center_seed = 0.5 * (c1_g + c2_g)
+                    half_seed = float(np.clip(0.5 * (c2_g - c1_g),
+                                              MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
+                    w1_seed, w2_seed = w1_g, w2_g
                 else:
-                    p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-                    bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
-                              [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
-                p3, _ = opt.curve_fit(_dual_gaussian, a, b, p0, bounds=bounds)
+                    center_seed, half_seed = _seed_bilayer_center(a, b)
+                    w1_seed = w2_seed = 1.5
+                # Restrict the fit to a window around the seeded bilayer so distant
+                # density (adjacent membranes, CTF ringing) cannot pull the fit out.
+                fit_window = MAX_THICKNESS / 2.0 + 2.0
+                wmask = (a >= center_seed - fit_window) & (a <= center_seed + fit_window)
+                af, bf = (a[wmask], b[wmask]) if int(wmask.sum()) >= 5 else (a, b)
+
+                # params: h1, w1, h2, w2, center, half_sep, offset
+                p0 = [0.02, w1_seed, 0.02, w2_seed, center_seed, half_seed, 0.0]
+                bounds = ([0.005, 0.8, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
+                          [0.04,  2.2, 0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
+                p3, _ = opt.curve_fit(_dual_gaussian_centered, af, bf, p0, bounds=bounds)
 
                 # Validate fit
-                y_pred = _dual_gaussian(a, *p3)
-                r2 = _compute_r_squared(b, y_pred)
-                thickness = np.abs(p3[4] - p3[1])
+                y_pred = _dual_gaussian_centered(af, *p3)
+                r2 = _compute_r_squared(bf, y_pred)
+                thickness = 2.0 * p3[5]
 
                 if r2 > R2_THRESHOLD and MIN_THICKNESS <= thickness <= MAX_THICKNESS:
-                    best_offset = (p3[1] + p3[4]) / 2
-                    best_sigma1 = p3[2]
-                    best_sigma2 = p3[5]
+                    best_offset = p3[4]          # bilayer center
+                    best_sigma1 = p3[1]
+                    best_sigma2 = p3[3]
                     best_method = 1
             except Exception:
                 pass
