@@ -49,6 +49,11 @@ Issues = "https://github.com/GrotjahnLab/surface_morphometrics/issues"
 
 [project.optional-dependencies]
 test = ["pytest"]
+# The napari GUI lives in a separate repo and contributes a `morphometrics gui`
+# subcommand via a "morphometrics.commands" entry point. Until it is published to
+# PyPI, install it from git:
+gui = ["surface-morphometrics-gui @ git+https://github.com/baradlab/surface-morphometrics-gui.git"]
+# gui = ["surface-morphometrics-gui"]  # use this once the GUI is on PyPI
 
 [project.scripts]
 morphometrics = "surface_morphometrics.cli:main"

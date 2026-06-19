@@ -13,6 +13,7 @@ __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
 import importlib
+import importlib.metadata
 import os
 
 import click
@@ -88,6 +89,21 @@ _NEXT_HINTS = {
 }
 
 
+# Third-party packages (e.g. the napari GUI) can contribute extra subcommands by
+# advertising a "morphometrics.commands" entry point whose target is a click
+# Command. That target module must be import-light — do heavy imports (napari/Qt)
+# inside the command callback — so `morphometrics --help` stays fast.
+_PLUGIN_GROUP = "morphometrics.commands"
+
+
+def _plugin_entry_points():
+    """name -> EntryPoint for every installed `morphometrics.commands` plugin."""
+    try:
+        return {ep.name: ep for ep in importlib.metadata.entry_points(group=_PLUGIN_GROUP)}
+    except Exception:
+        return {}
+
+
 class LazyGroup(click.Group):
     """A click Group that imports a subcommand's module only when invoked.
 
@@ -96,7 +112,11 @@ class LazyGroup(click.Group):
     """
 
     def list_commands(self, ctx):
-        return sorted(set(super().list_commands(ctx)) | set(_LAZY_COMMANDS))
+        return sorted(
+            set(super().list_commands(ctx))
+            | set(_LAZY_COMMANDS)
+            | set(_plugin_entry_points())
+        )
 
     def get_command(self, ctx, name):
         # Eagerly-registered commands (e.g. new_config) take precedence.
@@ -104,16 +124,25 @@ class LazyGroup(click.Group):
         if command is not None:
             return command
         target = _LAZY_COMMANDS.get(name)
-        if target is None:
-            return None
-        module_name, attr = target[0].split(":")
-        try:
-            module = importlib.import_module(module_name)
-        except Exception as exc:  # surface a clear message if a heavy dep is missing
-            raise click.ClickException(
-                f"Could not load the '{name}' command ({module_name}): {exc}"
-            )
-        return getattr(module, attr)
+        if target is not None:
+            module_name, attr = target[0].split(":")
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as exc:  # surface a clear message if a heavy dep is missing
+                raise click.ClickException(
+                    f"Could not load the '{name}' command ({module_name}): {exc}"
+                )
+            return getattr(module, attr)
+        # Fall back to plugin-provided commands (e.g. the GUI).
+        ep = _plugin_entry_points().get(name)
+        if ep is not None:
+            try:
+                return ep.load()
+            except Exception as exc:
+                raise click.ClickException(
+                    f"Could not load the '{name}' command from plugin '{ep.value}': {exc}"
+                )
+        return None
 
     def shell_complete(self, ctx, incomplete):
         """Complete subcommand names from the static table without importing the
@@ -139,7 +168,8 @@ class LazyGroup(click.Group):
     def _short_help(self, ctx, name):
         if name in _LAZY_COMMANDS:
             return _LAZY_COMMANDS[name][1]
-        cmd = click.Group.get_command(self, ctx, name)
+        # Eager commands and plugin-provided commands: ask for the command object.
+        cmd = self.get_command(ctx, name)
         return cmd.get_short_help_str() if cmd is not None else ""
 
     def format_commands(self, ctx, formatter):
