@@ -849,10 +849,15 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
                 # Center + half-separation parameterization keeps the two leaflet
                 # peaks apart so the global fit cannot collapse into one leaflet.
                 center_seed, half_seed = _seed_bilayer_center(ag, bg)
+                # Restrict the fit to a window around the seeded bilayer so distant
+                # density (adjacent membranes, CTF ringing) cannot pull the fit out.
+                fit_window = MAX_THICKNESS / 2.0 + 2.0
+                gmask = (ag >= center_seed - fit_window) & (ag <= center_seed + fit_window)
+                agf, bgf = (ag[gmask], bg[gmask]) if int(gmask.sum()) >= 7 else (ag, bg)
                 p0g = [0.02, 1.5, 0.02, 1.5, center_seed, half_seed, 0]
                 bounds_g = ([0.005, 0.8, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
                             [0.04,  2.2, 0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
-                popt_g, _ = opt.curve_fit(_dual_gaussian_centered, ag, bg, p0g, bounds=bounds_g)
+                popt_g, _ = opt.curve_fit(_dual_gaussian_centered, agf, bgf, p0g, bounds=bounds_g)
                 center_g, half_g = popt_g[4], popt_g[5]
                 c1_g, c2_g = center_g - half_g, center_g + half_g
                 global_center_offset = center_g
