@@ -43,30 +43,35 @@ def _dual_gaussian_centered(x, h1, w1, h2, w2, center, half_sep, o):
 
 
 def _seed_bilayer_center(a, b, default_center=0.0):
-    """Estimate (center, half_sep) of a bilayer profile region for fit seeding.
+    """Estimate (center, half_sep, n_peaks) of a bilayer profile region.
 
-    Locates the two tallest peaks in the profile (the two leaflets) and seeds the
-    center at their midpoint and half_sep at half their separation. Falls back to
-    ``default_center`` if fewer than two peaks are found. ``half_sep`` is clamped
-    to the physical thickness range.
+    Locates prominent peaks (the leaflets) and seeds the center at the midpoint of
+    the two tallest and half_sep at half their separation. ``n_peaks`` is the count
+    of prominent peaks: callers use it to decide whether a bilayer is actually
+    resolved (>= 2) or whether to fall back to a single Gaussian (poorly resolved /
+    high-defocus regions). Falls back to ``default_center`` if no peak is found;
+    ``half_sep`` is clamped to the physical thickness range.
     """
     from scipy.signal import find_peaks
 
     a = np.asarray(a)
     b = np.asarray(b)
-    peaks, _ = find_peaks(b)
-    if len(peaks) >= 2:
-        # the two tallest peaks are the leaflets
+    rng = float(b.max() - b.min())
+    # Require each peak to rise at least 5% of the profile range above its
+    # surroundings, so noise bumps are not mistaken for a second leaflet.
+    peaks, _ = find_peaks(b, prominence=(0.05 * rng if rng > 0 else None))
+    n_peaks = len(peaks)
+    if n_peaks >= 2:
         tallest = peaks[np.argsort(b[peaks])[-2:]]
         p_left, p_right = sorted(a[tallest])
         center = 0.5 * (p_left + p_right)
         half = 0.5 * (p_right - p_left)
-    elif len(peaks) == 1:
+    elif n_peaks == 1:
         center, half = float(a[peaks[0]]), MIN_THICKNESS / 2.0
     else:
         center, half = default_center, MIN_THICKNESS / 2.0
     half = float(np.clip(half, MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
-    return float(center), half
+    return float(center), half, n_peaks
 
 
 def _compute_r_squared(y_true, y_pred):
@@ -525,18 +530,23 @@ def fit_triangle_chunk_offsets(indices):
         # Step 1: Try dual Gaussian (unless monolayer mode). Parameterized by the
         # bilayer center + half-separation so the two leaflet peaks are forced to
         # opposite sides and cannot collapse into the same leaflet.
-        if not _worker_monolayer:
+        if _worker_global_fit_params is not None:
+            # Seed from the (more reliable) global average fit, which already
+            # confirmed a resolved bilayer.
+            c1_g, w1_g, c2_g, w2_g = _worker_global_fit_params
+            center_seed = 0.5 * (c1_g + c2_g)
+            half_seed = float(np.clip(0.5 * (c2_g - c1_g),
+                                      MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
+            w1_seed, w2_seed = w1_g, w2_g
+            n_resolved = 2
+        else:
+            center_seed, half_seed, n_resolved = _seed_bilayer_center(a, b)
+            w1_seed = w2_seed = 1.5
+
+        # Only attempt the dual Gaussian when two leaflets are actually resolved;
+        # poorly-resolved regions (one peak) fall through to the single Gaussian.
+        if not _worker_monolayer and n_resolved >= 2:
             try:
-                if _worker_global_fit_params is not None:
-                    # Seed from the (more reliable) global average fit.
-                    c1_g, w1_g, c2_g, w2_g = _worker_global_fit_params
-                    center_seed = 0.5 * (c1_g + c2_g)
-                    half_seed = float(np.clip(0.5 * (c2_g - c1_g),
-                                              MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
-                    w1_seed, w2_seed = w1_g, w2_g
-                else:
-                    center_seed, half_seed = _seed_bilayer_center(a, b)
-                    w1_seed = w2_seed = 1.5
                 # Restrict the fit to a window around the seeded bilayer so distant
                 # density (adjacent membranes, CTF ringing) cannot pull the fit out.
                 fit_window = MAX_THICKNESS / 2.0 + 2.0

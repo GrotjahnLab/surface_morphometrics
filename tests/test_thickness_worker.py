@@ -11,7 +11,7 @@ def _fit_bilayer(dat, x):
     lm = np.argmin(dat[:mid])
     rm = np.argmin(dat[mid:]) + mid
     a, b = x[lm + 2:rm - 2], dat[lm + 2:rm - 2]
-    center_seed, half_seed = tw._seed_bilayer_center(a, b)
+    center_seed, half_seed, _ = tw._seed_bilayer_center(a, b)
     window = tw.MAX_THICKNESS / 2.0 + 2.0
     m = (a >= center_seed - window) & (a <= center_seed + window)
     af, bf = (a[m], b[m]) if m.sum() >= 5 else (a, b)
@@ -35,8 +35,35 @@ def test_seed_bilayer_center_finds_two_leaflets():
     x = np.linspace(-10, 10, 201)
     # leaflets at -0.6 and +3.0 -> center +1.2, half 1.8
     b = tw._monogaussian(x, 1.0, -0.6, 1.0) + tw._monogaussian(x, 0.8, 3.0, 1.0)
-    center, half = tw._seed_bilayer_center(x, b)
+    center, half, n_peaks = tw._seed_bilayer_center(x, b)
+    assert n_peaks == 2
     assert abs(center - 1.2) < 0.2 and abs(half - 1.8) < 0.2
+
+
+def test_seed_bilayer_center_reports_single_unresolved_peak():
+    x = np.linspace(-10, 10, 201)
+    b = tw._monogaussian(x, 1.0, 1.0, 2.5)   # one broad, unresolved peak
+    center, half, n_peaks = tw._seed_bilayer_center(x, b)
+    assert n_peaks == 1                       # only one leaflet resolved
+    assert abs(center - 1.0) < 0.2            # center seeded at the single peak
+
+
+def test_single_resolved_peak_falls_back_to_single_gaussian():
+    # A poorly-resolved region (one broad peak): the dual fit must NOT be forced;
+    # n_resolved < 2 routes it to the single-Gaussian step, which still centers on
+    # the peak (no spurious ~2 nm bilayer reported).
+    x = np.linspace(-10, 10, 161)
+    dat = 0.011 + tw._monogaussian(x, 0.02, 1.0, 2.5)
+    mid = len(dat) // 2
+    lm = np.argmin(dat[:mid]); rm = np.argmin(dat[mid:]) + mid
+    a, b = x[lm + 2:rm - 2], dat[lm + 2:rm - 2]
+    _, _, n_resolved = tw._seed_bilayer_center(a, b)
+    assert n_resolved < 2                      # dual Gaussian is skipped
+    # the single-Gaussian fallback recovers the peak center
+    p_mono, _ = opt.curve_fit(tw._monogaussian_with_offset, a, b,
+                              [0.03, 1.0, 2.5, 0],
+                              bounds=([0.005, -6, 1.0, -1], [0.06, 6, 5.0, 1]))
+    assert abs(p_mono[1] - 1.0) < 0.3
 
 
 def test_fit_recovers_center_of_asymmetric_bilayer_with_confounder():

@@ -845,10 +845,10 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
             rm_g = np.argmin(pre_disp_avg[mid_g:]) + mid_g
             ag = x_positions[lm_g + 2:rm_g - 2]
             bg = pre_disp_avg[lm_g + 2:rm_g - 2]
-            if len(ag) >= 7:
+            center_seed, half_seed, n_resolved = _seed_bilayer_center(ag, bg)
+            if len(ag) >= 7 and n_resolved >= 2:
                 # Center + half-separation parameterization keeps the two leaflet
                 # peaks apart so the global fit cannot collapse into one leaflet.
-                center_seed, half_seed = _seed_bilayer_center(ag, bg)
                 # Restrict the fit to a window around the seeded bilayer so distant
                 # density (adjacent membranes, CTF ringing) cannot pull the fit out.
                 fit_window = MAX_THICKNESS / 2.0 + 2.0
@@ -868,7 +868,8 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
                       f"center={global_center_offset:+.3f} nm, "
                       f"thickness={2.0 * half_g:.3f} nm")
             else:
-                print("  Not enough points in fitting window for global avg dual Gaussian")
+                print(f"  Global average bilayer not resolved (n_peaks={n_resolved}) "
+                      "or too few points; per-triangle fits will self-seed.")
         except Exception as e:
             print(f"  Global avg profile dual Gaussian fit failed: {e}")
 
