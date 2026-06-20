@@ -70,6 +70,19 @@ def test_seed_keeps_asymmetric_bilayer_as_two_leaflets():
     assert abs(center - 1.2) < 0.3
 
 
+def test_partial_mixing_with_shallow_dip_still_fits_dual():
+    # Overlapping leaflets that still leave a shallow saddle (partial mixing) must
+    # resolve as two and the dual fit must recover the center exactly.
+    x = np.linspace(-10, 10, 201)
+    dat = 0.011 + tw._monogaussian(x, 0.017, -1.75, 1.0) + tw._monogaussian(x, 0.017, 1.75, 1.0)
+    mid = len(dat) // 2
+    lm = np.argmin(dat[:mid]); rm = np.argmin(dat[mid:]) + mid
+    _, _, n_resolved = tw._seed_bilayer_center(x[lm + 2:rm - 2], dat[lm + 2:rm - 2])
+    assert n_resolved == 2
+    center, half = _fit_bilayer(dat, x)
+    assert abs(center) < 0.1 and abs(2 * half - 3.5) < 0.4
+
+
 def test_single_resolved_peak_falls_back_to_single_gaussian():
     # A poorly-resolved region (one broad peak): the dual fit must NOT be forced;
     # n_resolved < 2 routes it to the single-Gaussian step, which still centers on
