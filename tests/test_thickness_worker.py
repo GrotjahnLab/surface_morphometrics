@@ -48,6 +48,28 @@ def test_seed_bilayer_center_reports_single_unresolved_peak():
     assert abs(center - 1.0) < 0.2            # center seeded at the single peak
 
 
+def test_seed_rejects_small_shoulders_as_single_peak():
+    # A single central membrane peak flanked by two smaller protein-density
+    # shoulders. The shoulders are local maxima but have tiny prominence, so they
+    # must NOT be taken as leaflets -- the region is one (unresolved) membrane.
+    x = np.linspace(-10, 10, 161)
+    b = (tw._monogaussian(x, 0.020, 0.0, 1.5)      # central membrane
+         + tw._monogaussian(x, 0.008, -4.0, 1.0)   # protein shoulder
+         + tw._monogaussian(x, 0.008, 4.0, 1.0))   # protein shoulder
+    center, half, n_resolved = tw._seed_bilayer_center(x, b)
+    assert n_resolved == 1            # shoulders rejected, only the membrane counts
+    assert abs(center) < 0.3          # centered on the membrane, not a shoulder/midpoint
+
+
+def test_seed_keeps_asymmetric_bilayer_as_two_leaflets():
+    # Genuinely asymmetric bilayer (one leaflet taller) must still resolve as two.
+    x = np.linspace(-10, 10, 161)
+    b = tw._monogaussian(x, 0.018, -0.6, 1.0) + tw._monogaussian(x, 0.015, 3.0, 1.0)
+    center, half, n_resolved = tw._seed_bilayer_center(x, b)
+    assert n_resolved == 2
+    assert abs(center - 1.2) < 0.3
+
+
 def test_single_resolved_peak_falls_back_to_single_gaussian():
     # A poorly-resolved region (one broad peak): the dual fit must NOT be forced;
     # n_resolved < 2 routes it to the single-Gaussian step, which still centers on

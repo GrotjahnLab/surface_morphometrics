@@ -12,6 +12,10 @@ import scipy.optimize as opt
 R2_THRESHOLD = 0.6
 MIN_THICKNESS = 2.0   # nm (minimum accepted peak-to-peak leaflet separation)
 MAX_THICKNESS = 7.0   # nm (maximum accepted peak-to-peak leaflet separation)
+# A second peak only counts as a real leaflet if its prominence is at least this
+# fraction of the strongest peak's; this rejects small flanking shoulders (e.g.
+# neighboring protein density) that would otherwise be mistaken for a leaflet.
+MIN_LEAFLET_PROMINENCE_RATIO = 0.3
 
 
 def _monogaussian(x, h, c, w):
@@ -43,14 +47,16 @@ def _dual_gaussian_centered(x, h1, w1, h2, w2, center, half_sep, o):
 
 
 def _seed_bilayer_center(a, b, default_center=0.0):
-    """Estimate (center, half_sep, n_peaks) of a bilayer profile region.
+    """Estimate (center, half_sep, n_resolved) of a bilayer profile region.
 
-    Locates prominent peaks (the leaflets) and seeds the center at the midpoint of
-    the two tallest and half_sep at half their separation. ``n_peaks`` is the count
-    of prominent peaks: callers use it to decide whether a bilayer is actually
-    resolved (>= 2) or whether to fall back to a single Gaussian (poorly resolved /
-    high-defocus regions). Falls back to ``default_center`` if no peak is found;
-    ``half_sep`` is clamped to the physical thickness range.
+    Finds peaks by prominence (so a peak must genuinely rise above its surroundings,
+    not just be elevated by a neighbor's tail), then takes the two **most prominent**
+    as the leaflets. A second leaflet only counts if its prominence is at least
+    ``MIN_LEAFLET_PROMINENCE_RATIO`` of the strongest peak's, which rejects small
+    flanking shoulders (e.g. neighboring protein density). ``n_resolved`` is the
+    number of real leaflets (2 -> fit a dual Gaussian; 1 -> a single central peak,
+    fall back to a single Gaussian; 0 -> nothing resolved). ``half_sep`` is clamped
+    to the physical thickness range.
     """
     from scipy.signal import find_peaks
 
@@ -58,20 +64,35 @@ def _seed_bilayer_center(a, b, default_center=0.0):
     b = np.asarray(b)
     rng = float(b.max() - b.min())
     # Require each peak to rise at least 5% of the profile range above its
-    # surroundings, so noise bumps are not mistaken for a second leaflet.
-    peaks, _ = find_peaks(b, prominence=(0.05 * rng if rng > 0 else None))
-    n_peaks = len(peaks)
-    if n_peaks >= 2:
-        tallest = peaks[np.argsort(b[peaks])[-2:]]
-        p_left, p_right = sorted(a[tallest])
+    # surroundings, so noise bumps are not picked up at all.
+    peaks, props = find_peaks(b, prominence=(0.05 * rng if rng > 0 else None))
+    if len(peaks) == 0:
+        return default_center, MIN_THICKNESS / 2.0, 0
+
+    positions = a[peaks]
+    proms = props["prominences"]
+    # Anchor on the strongest peak (the dominant membrane density), then look for
+    # the partner leaflet: a peak a physical bilayer thickness (MIN..MAX) away that
+    # is prominent enough. This excludes distant confounders (other membranes /
+    # protein further than MAX_THICKNESS) and rejects weak flanking shoulders.
+    primary = int(np.argmax(proms))
+    partner = None
+    for j in range(len(peaks)):
+        if j == primary:
+            continue
+        sep = abs(positions[j] - positions[primary])
+        if (MIN_THICKNESS <= sep <= MAX_THICKNESS
+                and proms[j] >= MIN_LEAFLET_PROMINENCE_RATIO * proms[primary]):
+            if partner is None or proms[j] > proms[partner]:
+                partner = j
+    if partner is not None:
+        p_left, p_right = sorted([positions[primary], positions[partner]])
         center = 0.5 * (p_left + p_right)
-        half = 0.5 * (p_right - p_left)
-    elif n_peaks == 1:
-        center, half = float(a[peaks[0]]), MIN_THICKNESS / 2.0
-    else:
-        center, half = default_center, MIN_THICKNESS / 2.0
-    half = float(np.clip(half, MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
-    return float(center), half, n_peaks
+        half = float(np.clip(0.5 * (p_right - p_left),
+                             MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
+        return float(center), half, 2
+    # One real peak (a single, possibly unresolved, membrane with weak shoulders).
+    return float(positions[primary]), MIN_THICKNESS / 2.0, 1
 
 
 def _compute_r_squared(y_true, y_pred):
