@@ -12,10 +12,21 @@ import scipy.optimize as opt
 R2_THRESHOLD = 0.6
 MIN_THICKNESS = 2.0   # nm (minimum accepted peak-to-peak leaflet separation)
 MAX_THICKNESS = 7.0   # nm (maximum accepted peak-to-peak leaflet separation)
-# A second peak only counts as a real leaflet if its prominence is at least this
-# fraction of the strongest peak's; this rejects small flanking shoulders (e.g.
-# neighboring protein density) that would otherwise be mistaken for a leaflet.
-MIN_LEAFLET_PROMINENCE_RATIO = 0.3
+# A second peak only counts as a real leaflet if it rises at least this fraction
+# of the strongest peak's height above the shared solvent baseline. Comparing
+# height-above-base (not find_peaks prominence) keeps a merged bilayer's second
+# leaflet -- which can have a near-zero saddle and so a tiny prominence -- while
+# still rejecting small flanking shoulders (e.g. neighboring protein density).
+MIN_LEAFLET_HEIGHT_RATIO = 0.5
+
+# "Prior-recovery" tier: when the surface's global average resolves a clean bilayer,
+# a triangle whose locally-averaged profile merges into a single peak can still hold a
+# real (just blurred) bilayer. Seeded from the global fit, its dual fit is trusted
+# only if it is non-degenerate and center-stable -- distinguishing a recovered merged
+# bilayer from a genuine single / skewed peak:
+MIN_LEAFLET_AMP_RATIO = 0.3       # both leaflets must have comparable amplitude
+MAX_CENTER_DISAGREEMENT = 0.7     # nm; dual center must agree with a single-Gaussian fit
+PINNED_THICKNESS_EPS = 0.15       # nm above MIN_THICKNESS; reject floor-pinned (fully merged) fits
 
 
 def _monogaussian(x, h, c, w):
@@ -46,45 +57,99 @@ def _dual_gaussian_centered(x, h1, w1, h2, w2, center, half_sep, o):
             + _monogaussian(x, h2, center + half_sep, w2) + o)
 
 
+def _dual_gaussian_shared_width(x, h1, h2, w, center, half_sep, o):
+    """Dual Gaussian like :func:`_dual_gaussian_centered` but with one shared width.
+
+    A bilayer's two leaflets have essentially the same width, so tying them to a
+    single ``w`` is more physical -- and, critically, removes a centering bias:
+    with independent widths the fit absorbs *asymmetric* outer density (a heavier
+    flank on one side, CTF ringing) by making one leaflet wider than the other, and
+    because both peaks share a single ``center`` that width-tilt is converted into a
+    systematic shift of the fitted center toward one side. Sharing the width leaves
+    the center free to sit at the true bilayer midpoint.
+    """
+    return _dual_gaussian_centered(x, h1, w, h2, w, center, half_sep, o)
+
+
+def _symmetric_fit_window(a, b, center_seed, half_seed, buffer=1.5, min_half_width=2.5):
+    """Window the profile symmetrically about ``center_seed`` for the dual fit.
+
+    The window is scaled to the seeded bilayer (``half_seed + buffer``) and kept
+    symmetric about the seed: if the profile extends further on one side than the
+    other, the window is trimmed to the shorter side so the fit sees an equal x-range
+    each way. An asymmetric range would otherwise give the least-squares fit more
+    leverage on one side and pull the center off the midpoint. Falls back to the full
+    region if the symmetric window would be too small to fit.
+    """
+    a = np.asarray(a)
+    b = np.asarray(b)
+    half_width = max(half_seed + buffer, min_half_width)
+    half_width = min(half_width, center_seed - float(a.min()), float(a.max()) - center_seed)
+    mask = (a >= center_seed - half_width) & (a <= center_seed + half_width)
+    if int(mask.sum()) >= 5:
+        return a[mask], b[mask]
+    return a, b
+
+
 def _seed_bilayer_center(a, b, default_center=0.0):
     """Estimate (center, half_sep, n_resolved) of a bilayer profile region.
 
-    Finds peaks by prominence (so a peak must genuinely rise above its surroundings,
-    not just be elevated by a neighbor's tail), then takes the two **most prominent**
-    as the leaflets. A second leaflet only counts if its prominence is at least
-    ``MIN_LEAFLET_PROMINENCE_RATIO`` of the strongest peak's, which rejects small
-    flanking shoulders (e.g. neighboring protein density). ``n_resolved`` is the
-    number of real leaflets (2 -> fit a dual Gaussian; 1 -> a single central peak,
-    fall back to a single Gaussian; 0 -> nothing resolved). ``half_sep`` is clamped
-    to the physical thickness range.
+    Enumerates every local maximum (no prominence floor), anchors on the tallest
+    peak -- the dominant membrane density -- and pairs it with a partner leaflet a
+    physical bilayer thickness (MIN..MAX nm) away. The partner is validated by its
+    height above the shared solvent baseline (``b.min()``), not by ``find_peaks``
+    prominence. This matters for two reasons:
+
+    * A merged/thin bilayer (e.g. an OMM at this resolution) has two real leaflets
+      separated by a near-flat saddle, so the shorter leaflet's *prominence* is tiny
+      and any prominence floor -- or comparing the two leaflets' prominences -- drops
+      it. Height above the common base is independent of saddle depth, so both
+      leaflets of a merged bilayer are kept.
+    * Comparing height-above-base still rejects small flanking shoulders (neighbouring
+      protein density), which sit well below ``MIN_LEAFLET_HEIGHT_RATIO`` of the
+      membrane peak, and the MIN..MAX window rejects distant confounders.
+
+    Being permissive here is safe: the caller validates every dual fit by R^2 and
+    fitted thickness, so a spurious partner is discarded downstream, whereas a missed
+    leaflet would wrongly skip the dual fit entirely. ``n_resolved`` is the number of
+    real leaflets (2 -> fit a dual Gaussian; 1 -> a single central peak, fall back to
+    a single Gaussian; 0 -> nothing resolved). ``half_sep`` is clamped to the physical
+    thickness range.
     """
     from scipy.signal import find_peaks
 
     a = np.asarray(a)
     b = np.asarray(b)
-    rng = float(b.max() - b.min())
-    # Require each peak to rise at least 5% of the profile range above its
-    # surroundings, so noise bumps are not picked up at all.
-    peaks, props = find_peaks(b, prominence=(0.05 * rng if rng > 0 else None))
+    # All strict local maxima. No prominence floor: a merged bilayer's second leaflet
+    # has near-zero prominence but is still a real leaflet; it is filtered below by
+    # height-above-base and separation instead.
+    peaks, _ = find_peaks(b)
     if len(peaks) == 0:
         return default_center, MIN_THICKNESS / 2.0, 0
 
     positions = a[peaks]
-    proms = props["prominences"]
-    # Anchor on the strongest peak (the dominant membrane density), then look for
-    # the partner leaflet: a peak a physical bilayer thickness (MIN..MAX) away that
-    # is prominent enough. This excludes distant confounders (other membranes /
-    # protein further than MAX_THICKNESS) and rejects weak flanking shoulders.
-    primary = int(np.argmax(proms))
+    heights = b[peaks]
+    base = float(b.min())
+    # Anchor on the tallest peak (dominant membrane density), then look for the
+    # partner leaflet: a peak a physical bilayer thickness (MIN..MAX) away whose
+    # height above the shared solvent base is a real fraction of the anchor's.
+    primary = int(np.argmax(heights))
+    primary_rise = float(heights[primary] - base)
     partner = None
+    best_partner_rise = 0.0
     for j in range(len(peaks)):
         if j == primary:
             continue
         sep = abs(positions[j] - positions[primary])
-        if (MIN_THICKNESS <= sep <= MAX_THICKNESS
-                and proms[j] >= MIN_LEAFLET_PROMINENCE_RATIO * proms[primary]):
-            if partner is None or proms[j] > proms[partner]:
-                partner = j
+        if not (MIN_THICKNESS <= sep <= MAX_THICKNESS):
+            continue
+        partner_rise = float(heights[j] - base)
+        if primary_rise <= 0:
+            continue
+        if (partner_rise >= MIN_LEAFLET_HEIGHT_RATIO * primary_rise
+                and partner_rise > best_partner_rise):
+            partner = j
+            best_partner_rise = partner_rise
     if partner is not None:
         p_left, p_right = sorted([positions[primary], positions[partner]])
         center = 0.5 * (p_left + p_right)
@@ -93,6 +158,73 @@ def _seed_bilayer_center(a, b, default_center=0.0):
         return float(center), half, 2
     # One real peak (a single, possibly unresolved, membrane with weak shoulders).
     return float(positions[primary]), MIN_THICKNESS / 2.0, 1
+
+
+def _leaflet_resolution(a, b):
+    """Continuous bilayer-resolution score in [0, 1] for a profile region.
+
+    This is the continuous form of the resolution gate: the height (above the shared
+    solvent base) of the best second leaflet within a physical bilayer distance of the
+    dominant one, as a fraction of the dominant leaflet's height. A clearly resolved
+    bilayer scores near 1; a profile with only a weak shoulder scores low; a fully
+    merged single peak scores 0. The gate accepts a triangle as strictly resolved at
+    ``MIN_LEAFLET_HEIGHT_RATIO`` (0.5); below that a thickness is only obtained by
+    prior recovery and reads systematically thin, so the score doubles as a
+    per-triangle reliability flag for the reported thickness.
+    """
+    from scipy.signal import find_peaks
+
+    a = np.asarray(a)
+    b = np.asarray(b)
+    peaks, _ = find_peaks(b)
+    if len(peaks) < 2:
+        return 0.0
+    positions = a[peaks]
+    heights = b[peaks]
+    base = float(b.min())
+    primary = int(np.argmax(heights))
+    primary_rise = float(heights[primary] - base)
+    if primary_rise <= 0:
+        return 0.0
+    best = 0.0
+    for j in range(len(peaks)):
+        if j == primary:
+            continue
+        if MIN_THICKNESS <= abs(positions[j] - positions[primary]) <= MAX_THICKNESS:
+            best = max(best, float(heights[j] - base) / primary_rise)
+    return float(min(best, 1.0))
+
+
+def _dual_recovery_ok(a, b, popt, r2, center_seed):
+    """Accept a global-prior-seeded dual fit on a single-peak (merged) triangle?
+
+    Used only when the surface's global average resolves a bilayer but this triangle's
+    local profile shows one peak. The dual fit is trusted only if it is a real,
+    non-degenerate, centered bilayer rather than a forced split of a single peak:
+
+    * a good fit with a physical thickness clear of the floor -- a floor-pinned fit
+      means the leaflets merged completely, so there is no real separation to report;
+    * both leaflets comparable in amplitude (neither Gaussian collapsed to nothing);
+    * the dual center agrees with an independent single-Gaussian center -- a genuine
+      skewed single peak splits asymmetrically and the two disagree.
+
+    ``popt`` is the ``_dual_gaussian_shared_width`` result (h1, h2, w, center, half, o).
+    """
+    thickness = 2.0 * popt[4]
+    if not (r2 > R2_THRESHOLD
+            and MIN_THICKNESS + PINNED_THICKNESS_EPS < thickness <= MAX_THICKNESS):
+        return False
+    h1, h2 = popt[0], popt[1]
+    if min(h1, h2) < MIN_LEAFLET_AMP_RATIO * max(h1, h2):
+        return False
+    try:
+        ps, _ = opt.curve_fit(_monogaussian_with_offset, a, b,
+                              [0.03, center_seed, 2.5, 0],
+                              bounds=([0.005, center_seed - 6, 1.0, -1],
+                                      [0.06, center_seed + 6, 5.0, 1]))
+    except Exception:
+        return False
+    return abs(popt[3] - ps[1]) < MAX_CENTER_DISAGREEMENT
 
 
 def _compute_r_squared(y_true, y_pred):
@@ -284,7 +416,6 @@ def compute_thickness_chunk(indices):
         dat = dat / (80/81 * dat_sum)
 
         try:
-            ipk = _lt_x_positions[np.argmax(dat)]
             mid = len(dat) // 2
             left_min = np.argmin(dat[:mid])
             right_min = np.argmin(dat[mid:]) + mid
@@ -292,16 +423,26 @@ def compute_thickness_chunk(indices):
             a = _lt_x_positions[left_min+2:right_min-2]
             b = dat[left_min+2:right_min-2]
 
-            if len(a) >= 7:
-                p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-                bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
-                          [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
-                popt, _ = opt.curve_fit(_dual_gaussian, a, b, p0, bounds=bounds)
-                thickness = np.abs(popt[4] - popt[1])
-                if 2.0 <= thickness <= 7.0:
-                    results.append(thickness)
-                else:
-                    results.append(np.nan)
+            if len(a) < 7:
+                results.append(np.nan)
+                continue
+
+            # Same quality gate as fit_triangle_chunk: require two resolved leaflets,
+            # then a centered + shared-width fit accepted only on R^2 and a physical
+            # thickness; otherwise NaN (no valid bilayer thickness).
+            center_seed, half_seed, n_resolved = _seed_bilayer_center(a, b)
+            if n_resolved < 2:
+                results.append(np.nan)
+                continue
+            af, bf = _symmetric_fit_window(a, b, center_seed, half_seed)
+            p0 = [0.02, 0.02, 1.5, center_seed, half_seed, 0.0]
+            bounds = ([0.005, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
+                      [0.04,  0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
+            popt, _ = opt.curve_fit(_dual_gaussian_shared_width, af, bf, p0, bounds=bounds)
+            r2 = _compute_r_squared(bf, _dual_gaussian_shared_width(af, *popt))
+            thickness = 2.0 * popt[4]
+            if r2 > R2_THRESHOLD and MIN_THICKNESS <= thickness <= MAX_THICKNESS:
+                results.append(thickness)
             else:
                 results.append(np.nan)
         except Exception:
@@ -351,7 +492,10 @@ def fit_triangle_chunk(indices):
     Returns
     -------
     list of tuples
-        [(thickness, offset), ...] for each triangle in chunk
+        [(thickness, offset, resolution), ...] for each triangle in chunk.
+        ``thickness`` is NaN where no valid bilayer was measured; ``resolution`` is
+        the per-triangle bilayer-resolution score in [0, 1] (NaN if there was no
+        profile to score) -- a reliability flag for the reported thickness.
     """
     sample_spacing = _worker_x[1] - _worker_x[0] if len(_worker_x) > 1 else 1.0
     max_shift_samples = max(1, int(round(2.0 / sample_spacing)))
@@ -364,7 +508,7 @@ def fit_triangle_chunk(indices):
         neighbors = _worker_neighbor_indices[i][valid_mask]
 
         if len(neighbors) == 0:
-            results.append((np.nan, 0))
+            results.append((np.nan, 0, np.nan))
             continue
 
         weights = 1.0 / (1.0 + l)
@@ -376,7 +520,7 @@ def fit_triangle_chunk(indices):
             dat = dat - dat.min()
             dat_sum = dat.sum()
             if dat_sum == 0:
-                results.append((np.nan, 0))
+                results.append((np.nan, 0, np.nan))
                 continue
             dat = dat / (80 / 81 * dat_sum)
         else:
@@ -387,7 +531,7 @@ def fit_triangle_chunk(indices):
             row_sums = indiv.sum(axis=1, keepdims=True)
             valid_rows = row_sums.flatten() > 0
             if not np.any(valid_rows):
-                results.append((np.nan, 0))
+                results.append((np.nan, 0, np.nan))
                 continue
             indiv[valid_rows] /= (80 / 81 * row_sums[valid_rows])
 
@@ -410,12 +554,6 @@ def fit_triangle_chunk(indices):
             else:
                 dat = dat0
 
-        # Find initial peak and set up fitting bounds
-        ipk = _worker_x[np.argmax(dat)]
-        p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-        bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-1.5, 0.8, -1],
-                  [0.04, ipk+1.5, 2.2, 0.04, ipk+6, 2.2, 1])
-
         # Find minima to constrain fitting region
         mid = len(dat) // 2
         left_min = np.argmin(dat[:mid])
@@ -424,17 +562,58 @@ def fit_triangle_chunk(indices):
         a = _worker_x[left_min+2:right_min-2]
         b = dat[left_min+2:right_min-2]
 
-        if len(a) < 7:  # Need enough points for 7-parameter fit
-            results.append((np.nan, 0))
+        if len(a) < 7:  # Need enough points for the fit
+            results.append((np.nan, 0, np.nan))
+            continue
+
+        # Per-triangle reliability flag reported alongside every thickness: how clearly
+        # the two leaflets are resolved (1 = cleanly separated, 0 = a single merged
+        # peak). Strict fits score >= MIN_LEAFLET_HEIGHT_RATIO; prior-recovered fits
+        # below it (and read systematically thin), so downstream can weight or filter.
+        resolution = _leaflet_resolution(a, b)
+
+        # Quality gate, two tiers (mirrors the refinement path):
+        #   * resolved (n_resolved >= 2): fit and accept on R^2 + physical thickness;
+        #   * prior recovery (n_resolved < 2 but the global average resolved a bilayer):
+        #     a locally-merged profile may still hold a real, blurred bilayer -- fit it
+        #     seeded from the global prior and accept only a non-degenerate,
+        #     center-stable result (_dual_recovery_ok). Without a prior, a single peak
+        #     has no measurable thickness -> NaN.
+        center_seed, half_seed, n_resolved = _seed_bilayer_center(a, b)
+        have_prior = _worker_global_fit_params is not None
+        if have_prior:
+            c1_g, w1_g, c2_g, w2_g = _worker_global_fit_params
+            seed_c = 0.5 * (c1_g + c2_g)
+            seed_h = float(np.clip(0.5 * (c2_g - c1_g),
+                                   MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
+            seed_w = w1_g
+        else:
+            seed_c, seed_h, seed_w = center_seed, half_seed, 1.5
+
+        recovery = n_resolved < 2 and have_prior
+        if n_resolved < 2 and not recovery:
+            results.append((np.nan, 0, resolution))
             continue
 
         try:
-            p3, _ = opt.curve_fit(_dual_gaussian, a, b, p0, bounds=bounds)
-            thickness = np.abs(p3[4] - p3[1])
-            offset = (p3[4] + p3[1]) / 2
-            results.append((thickness, offset))
+            af, bf = _symmetric_fit_window(a, b, seed_c, seed_h)
+            p0 = [0.02, 0.02, seed_w, seed_c, seed_h, 0.0]
+            bounds = ([0.005, 0.005, 0.8, seed_c - 3.0, MIN_THICKNESS / 2.0, -1],
+                      [0.04,  0.04,  2.2, seed_c + 3.0, MAX_THICKNESS / 2.0,  1])
+            p3, _ = opt.curve_fit(_dual_gaussian_shared_width, af, bf, p0, bounds=bounds)
+            r2 = _compute_r_squared(bf, _dual_gaussian_shared_width(af, *p3))
+            thickness = 2.0 * p3[4]
+            offset = p3[3]
+            if recovery:
+                accept = _dual_recovery_ok(a, b, p3, r2, seed_c)
+            else:
+                accept = r2 > R2_THRESHOLD and MIN_THICKNESS <= thickness <= MAX_THICKNESS
+            if accept:
+                results.append((thickness, offset, resolution))
+            else:
+                results.append((np.nan, 0, resolution))
         except Exception:
-            results.append((np.nan, 0))
+            results.append((np.nan, 0, resolution))
 
     return results
 
@@ -551,54 +730,71 @@ def fit_triangle_chunk_offsets(indices):
         # Step 1: Try dual Gaussian (unless monolayer mode). Parameterized by the
         # bilayer center + half-separation so the two leaflet peaks are forced to
         # opposite sides and cannot collapse into the same leaflet.
-        if _worker_global_fit_params is not None:
-            # Seed from the (more reliable) global average fit, which already
-            # confirmed a resolved bilayer.
+        #
+        # The global average fit (when available) gives more reliable seeds for the
+        # center/half/width. The dual fit runs in two tiers:
+        #   * resolved (n_resolved >= 2): a clear two-leaflet profile -> fit and accept
+        #     on R^2 + physical thickness (high confidence);
+        #   * prior recovery (n_resolved < 2 but the global average resolved a bilayer):
+        #     a locally-merged profile may still hold a real, blurred bilayer. Seed it
+        #     from the global fit but accept only a non-degenerate, center-stable result
+        #     (_dual_recovery_ok), so a genuine single / skewed peak is still rejected
+        #     and falls through to the single Gaussian rather than inventing a bilayer.
+        tri_center, tri_half, n_resolved = _seed_bilayer_center(a, b)
+        have_prior = _worker_global_fit_params is not None
+        if have_prior:
             c1_g, w1_g, c2_g, w2_g = _worker_global_fit_params
             center_seed = 0.5 * (c1_g + c2_g)
             half_seed = float(np.clip(0.5 * (c2_g - c1_g),
                                       MIN_THICKNESS / 2.0, MAX_THICKNESS / 2.0))
-            w1_seed, w2_seed = w1_g, w2_g
-            n_resolved = 2
+            w1_seed = w2_seed = w1_g
         else:
-            center_seed, half_seed, n_resolved = _seed_bilayer_center(a, b)
+            center_seed, half_seed = tri_center, tri_half
             w1_seed = w2_seed = 1.5
 
-        # Only attempt the dual Gaussian when two leaflets are actually resolved;
-        # poorly-resolved regions (one peak) fall through to the single Gaussian.
-        if not _worker_monolayer and n_resolved >= 2:
+        recovery = n_resolved < 2 and have_prior      # tier 2
+        if not _worker_monolayer and (n_resolved >= 2 or recovery):
             try:
-                # Restrict the fit to a window around the seeded bilayer so distant
-                # density (adjacent membranes, CTF ringing) cannot pull the fit out.
-                fit_window = MAX_THICKNESS / 2.0 + 2.0
-                wmask = (a >= center_seed - fit_window) & (a <= center_seed + fit_window)
-                af, bf = (a[wmask], b[wmask]) if int(wmask.sum()) >= 5 else (a, b)
+                # Restrict the fit to a window symmetric about the seeded bilayer so
+                # distant density (adjacent membranes, CTF ringing) cannot pull the
+                # fit out and an asymmetric range cannot bias the center.
+                af, bf = _symmetric_fit_window(a, b, center_seed, half_seed)
 
-                # params: h1, w1, h2, w2, center, half_sep, offset
-                p0 = [0.02, w1_seed, 0.02, w2_seed, center_seed, half_seed, 0.0]
-                bounds = ([0.005, 0.8, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
-                          [0.04,  2.2, 0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
-                p3, _ = opt.curve_fit(_dual_gaussian_centered, af, bf, p0, bounds=bounds)
+                # params: h1, h2, shared_w, center, half_sep, offset. A single shared
+                # width keeps asymmetric flanks from tilting the fit and shifting the
+                # center (see _dual_gaussian_shared_width).
+                w_seed = 0.5 * (w1_seed + w2_seed)
+                p0 = [0.02, 0.02, w_seed, center_seed, half_seed, 0.0]
+                bounds = ([0.005, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
+                          [0.04,  0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
+                p3, _ = opt.curve_fit(_dual_gaussian_shared_width, af, bf, p0, bounds=bounds)
 
-                # Validate fit
-                y_pred = _dual_gaussian_centered(af, *p3)
-                r2 = _compute_r_squared(bf, y_pred)
-                thickness = 2.0 * p3[5]
+                # Validate fit (stricter, center-stable check for the recovery tier).
+                r2 = _compute_r_squared(bf, _dual_gaussian_shared_width(af, *p3))
+                thickness = 2.0 * p3[4]
+                if recovery:
+                    accept = _dual_recovery_ok(a, b, p3, r2, center_seed)
+                else:
+                    accept = r2 > R2_THRESHOLD and MIN_THICKNESS <= thickness <= MAX_THICKNESS
 
-                if r2 > R2_THRESHOLD and MIN_THICKNESS <= thickness <= MAX_THICKNESS:
-                    best_offset = p3[4]          # bilayer center
-                    best_sigma1 = p3[1]
-                    best_sigma2 = p3[3]
+                if accept:
+                    best_offset = p3[3]          # bilayer center
+                    best_sigma1 = p3[2]
+                    best_sigma2 = p3[2]
                     best_method = 1
             except Exception:
                 pass
 
-        # Step 2: Try single Gaussian if dual didn't work
+        # Step 2: Try single Gaussian if dual didn't work. For an unresolved triangle
+        # the global membrane center (when available) is a more robust seed than this
+        # triangle's noisy argmax, which can latch onto a spurious bump; bounds stay
+        # wide so a genuinely shifted membrane can still be found.
         if best_method == 0:
             try:
-                p0_mono = [0.03, ipk, 2.5, 0]
-                bounds_mono = ([0.005, ipk-6, 1.0, -1],
-                               [0.06, ipk+6, 5.0, 1])
+                mono_seed = center_seed if _worker_global_fit_params is not None else ipk
+                p0_mono = [0.03, mono_seed, 2.5, 0]
+                bounds_mono = ([0.005, mono_seed-6, 1.0, -1],
+                               [0.06, mono_seed+6, 5.0, 1])
                 p_mono, _ = opt.curve_fit(_monogaussian_with_offset, a, b, p0_mono, bounds=bounds_mono)
 
                 # Validate fit

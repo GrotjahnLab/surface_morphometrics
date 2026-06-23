@@ -46,7 +46,8 @@ from .sample_density import load_mrc, sample_density_single
 from .measure_thickness import find_mins, dual_gaussian, monogaussian
 from ._thickness_worker import (init_worker, fit_triangle_chunk_offsets,
                                init_local_thickness_worker, compute_thickness_chunk,
-                               _dual_gaussian_centered, _seed_bilayer_center,
+                               _dual_gaussian_centered, _dual_gaussian_shared_width,
+                               _seed_bilayer_center, _symmetric_fit_window,
                                MIN_THICKNESS, MAX_THICKNESS)
 from . import curvature
 
@@ -851,19 +852,19 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
                 # peaks apart so the global fit cannot collapse into one leaflet.
                 # Restrict the fit to a window around the seeded bilayer so distant
                 # density (adjacent membranes, CTF ringing) cannot pull the fit out.
-                fit_window = MAX_THICKNESS / 2.0 + 2.0
-                gmask = (ag >= center_seed - fit_window) & (ag <= center_seed + fit_window)
-                agf, bgf = (ag[gmask], bg[gmask]) if int(gmask.sum()) >= 7 else (ag, bg)
-                p0g = [0.02, 1.5, 0.02, 1.5, center_seed, half_seed, 0]
-                bounds_g = ([0.005, 0.8, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
-                            [0.04,  2.2, 0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
-                popt_g, _ = opt.curve_fit(_dual_gaussian_centered, agf, bgf, p0g, bounds=bounds_g)
-                center_g, half_g = popt_g[4], popt_g[5]
+                agf, bgf = _symmetric_fit_window(ag, bg, center_seed, half_seed)
+                # Shared leaflet width: keeps asymmetric outer density from tilting
+                # the fit and shifting the bilayer center off the true midpoint.
+                p0g = [0.02, 0.02, 1.5, center_seed, half_seed, 0]
+                bounds_g = ([0.005, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
+                            [0.04,  0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
+                popt_g, _ = opt.curve_fit(_dual_gaussian_shared_width, agf, bgf, p0g, bounds=bounds_g)
+                center_g, half_g = popt_g[3], popt_g[4]
                 c1_g, c2_g = center_g - half_g, center_g + half_g
                 global_center_offset = center_g
-                global_sigma1 = popt_g[1]
-                global_sigma2 = popt_g[3]
-                global_fit_params = (c1_g, popt_g[1], c2_g, popt_g[3])
+                global_sigma1 = popt_g[2]
+                global_sigma2 = popt_g[2]
+                global_fit_params = (c1_g, popt_g[2], c2_g, popt_g[2])
                 print(f"  Global avg profile: c1={c1_g:.3f} nm, c2={c2_g:.3f} nm, "
                       f"center={global_center_offset:+.3f} nm, "
                       f"thickness={2.0 * half_g:.3f} nm")
