@@ -593,7 +593,7 @@ def bootstrap(sets, areas, conditions, morphologies, reps=1000, basename="bootst
 @click.argument('experimentname', required=True)
 def assemble_experiment_pickle(configfile, experimentname):
     """Assemble a pickle file for an experiment from all the tomos in the config folder."""
-    config = load_config(configfile, require=("seg_dir", "work_dir"))
+    config = load_config(configfile, require=("seg_dir", "work_dir", "segmentation_values"))
 
     output_file = config["work_dir"] + experimentname+".pkl"
 

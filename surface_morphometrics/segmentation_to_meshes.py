@@ -84,7 +84,7 @@ def make_meshes_cli(configfile, segmentation):
 
     # Validate after the rename warning above, so a user still on the old key names
     # sees the migration hint rather than only a bare "missing seg_dir".
-    require_keys(config, ("seg_dir", "work_dir"), configfile)
+    require_keys(config, ("seg_dir", "work_dir", "segmentation_values"), configfile)
 
     # See if a specific file was specified
     if segmentation is None:
