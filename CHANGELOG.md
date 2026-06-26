@@ -4,6 +4,54 @@ All notable changes to the Surface Morphometrics toolkit are documented here.
 This project loosely follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.0b2] — beta
+
+A quality and robustness release on top of 2.0.0b1, focused on the density-profile
+bilayer fitting (mesh refinement and thickness measurement), a forgiving centralized
+config system, and packaging fixes.
+
+### Added
+- Per-triangle `bilayer_resolution` score (0–1) written to the thickness CSV — a
+  reliability flag distinguishing strictly-resolved leaflets from prior-recovered
+  (slightly thin) measurements.
+- `morphometrics new_config --simple` — a minimal, fully-runnable starter config
+  (the full annotated template is still available via the default `--verbose`).
+- Centralized config defaults: omitted parameter sections fall back to documented
+  values (a single source of truth, kept in sync with the template by a test), so
+  partial/stripped configs run.
+- Per-command required-key validation with one clean error message instead of a
+  `KeyError` traceback; directory paths no longer need trailing slashes.
+- Distance/orientation measurements default to all-vs-all when `intra`/`inter` are
+  omitted (announced; set them explicitly empty to opt out).
+- Plugins can contribute `morphometrics` subcommands via a `morphometrics.commands`
+  entry point.
+- GitHub Actions test workflow and unit tests for the fitting and config helpers.
+
+### Changed
+- **Dual-Gaussian bilayer fitting overhaul** (mesh refinement and thickness): leaflet
+  detection by height above the shared solvent base (fixes near-universal fallback to
+  a single Gaussian on clean bilayers); a shared-width, centered fit over a symmetric
+  window (removes a ~0.1 nm centering bias and the collapse failure mode); and a
+  two-tier gate that recovers locally-merged bilayers from the global-average prior
+  while still rejecting genuine single/skewed peaks. The whole-surface average fit and
+  its `_fit.svg` plot use the same model.
+- Thickness measurement now applies a real quality gate (resolution + R² + physical
+  range) and reports `NaN` for unmeasurable triangles instead of a spurious value.
+- `accept_refinement` falls back to a surface's last available iteration (with a
+  warning) when it converged before the requested step.
+- `mesh_refinement` defaults now match the documented template (the code's omitted-key
+  defaults had drifted): `average_radius` 25, `average_radius_min` 12,
+  `max_total_offset` 8, `laplacian_iterations` 5, `laplacian_lambda` 0.5,
+  `convergence_threshold` 0.05, `xcorr_iterations` [1, 2, 3].
+- `export_obj`: `--angstroms` renamed to `--scale_to_angstroms`, with config-aware
+  unit conversion.
+
+### Fixed
+- pycurv fork deadlock on Linux (cap `OMP_NUM_THREADS=1` before importing pycurv).
+- `export_obj` reads legacy / empty VTP surfaces instead of crashing.
+- NumPy 2.x compatibility (replace the removed `np.trapz`).
+- Deprecated `matplotlib.cm.get_cmap` usage.
+
 ## [2.0.0b1] — beta
 
 This release turns the collection of scripts into an installable Python package
@@ -49,4 +97,5 @@ how the toolkit is invoked.
 - README reorganized (Installation / Quick start / Pipeline / Analysis &
   visualization / Reference / Upgrading) with a table of contents.
 
+[2.0.0b2]: https://github.com/GrotjahnLab/surface_morphometrics/releases
 [2.0.0b1]: https://github.com/GrotjahnLab/surface_morphometrics/releases
