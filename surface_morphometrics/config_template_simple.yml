@@ -1,0 +1,36 @@
+# Minimal surface_morphometrics configuration.
+#
+# Only the most commonly-adjusted settings are listed here; every other option uses
+# a sensible default. Run `morphometrics new_config --verbose` for the fully
+# annotated template that exposes every setting.
+
+# --- Directories (required) ---
+seg_dir: "./segmentations/"   # Directory of segmentation MRC files
+tomo_dir: "./tomograms/"      # Directory of tomogram MRC files (density sampling, thickness, refinement)
+work_dir: "./morphometrics/"  # Directory for output files
+
+# --- Features (required): map each feature name to its segmentation label value ---
+segmentation_values:
+  OMM: 1
+  IMM: 2
+  ER: 3
+
+cores: 6  # Number of parallel processes
+
+# --- Mesh generation ---
+surface_generation:
+  angstroms: false                 # false rescales surfaces to nm; true keeps angstrom scale
+  isotropic_remesh: true           # Remesh to near-equilateral triangles of ~target_area
+  target_area: 1.0                 # Target triangle area in nm^2 (when isotropic_remesh is true)
+  simplify: false                  # Instead of remeshing, decimate to simplify_max_triangles
+  simplify_max_triangles: 300000   # Only used when simplify is true
+
+# --- Thickness measurement ---
+thickness_measurements:
+  average_radius: 12   # Radius in nm for local averaging of density profiles
+
+# --- Mesh refinement (optional step) ---
+mesh_refinement:
+  average_radius: 25             # Radius in nm for local averaging of density profiles
+  iterations: 6                  # Number of refinement iterations
+  xcorr_iterations: [1, 2, 3]    # Iterations that cross-correlate to sharpen the bilayer before fitting

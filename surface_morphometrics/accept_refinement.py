@@ -25,11 +25,29 @@ __email__ = "benjamin.barad@gmail.com"
 __license__ = "GPLv3"
 
 import os
+import re
 from glob import glob
 from pathlib import Path
 
 import click
 import yaml
+
+from .config_utils import load_config
+
+
+def _iterations_by_surface(work_dir):
+    """Map each surface basename to its sorted available refinement iterations.
+
+    Refinement stops early once a surface converges, so different surfaces may
+    have different numbers of `_refined_iter*` files.
+    """
+    pattern = re.compile(r"^(.*)_refined_iter(\d+)\.surface\.vtp$")
+    out = {}
+    for path in glob(f"{work_dir}*_refined_iter*.surface.vtp"):
+        match = pattern.match(os.path.basename(path))
+        if match:
+            out.setdefault(match.group(1), []).append(int(match.group(2)))
+    return {base: sorted(iters) for base, iters in out.items()}
 
 
 # The canonical surface files the downstream pipeline consumes.  Only these are
@@ -185,8 +203,7 @@ def accept_refinement_cli(configfile, step, component_name, tomogram, dry_run):
     graph, the command warns that pycurv must be re-run on the promoted surface
     before any downstream analysis.
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
@@ -200,11 +217,10 @@ def accept_refinement_cli(configfile, step, component_name, tomogram, dry_run):
         print("DRY RUN - no files will be changed")
     print("-" * 60)
 
-    # Discover surfaces that have the requested iteration by finding their
-    # accepted-step surface files, then strip the tag to recover the basename.
-    iter_tag = f"_refined_iter{step}.surface.vtp"
-    candidates = sorted(glob(f"{work_dir}*{iter_tag}"))
-    basenames = [os.path.basename(p)[:-len(iter_tag)] for p in candidates]
+    # Discover every refined surface and the iterations it actually has (a surface
+    # that converged early stops before `step`).
+    iters_by_surface = _iterations_by_surface(work_dir)
+    basenames = sorted(iters_by_surface)
 
     # Apply optional component / tomogram filters on the basename.
     if tomogram:
@@ -213,14 +229,23 @@ def accept_refinement_cli(configfile, step, component_name, tomogram, dry_run):
         basenames = [b for b in basenames if b.endswith(f"_{component_name}")]
 
     if not basenames:
-        print(f"No surfaces with a refined iteration {step} found in {work_dir}"
-              + (f" matching the given filters." if (component_name or tomogram) else "."))
+        print(f"No refined surfaces found in {work_dir}"
+              + (" matching the given filters." if (component_name or tomogram) else "."))
         return
 
     accepted = 0
     needs_pycurv = []
     for basename in basenames:
-        result = accept_one(work_dir, basename, step, radius_hit, dry_run)
+        available = iters_by_surface[basename]
+        # Use the requested iteration, or the last available one if refinement
+        # converged before it (largest available iteration <= step).
+        usable = [i for i in available if i <= step] or available
+        effective_step = usable[-1]
+        if effective_step != step:
+            print(f"  WARNING: {basename}: iteration {step} not available - refinement "
+                  f"converged early at iteration {effective_step}; using iteration "
+                  f"{effective_step}.")
+        result = accept_one(work_dir, basename, effective_step, radius_hit, dry_run)
         if result is not None:
             accepted += 1
             if result is False:
@@ -229,7 +254,8 @@ def accept_refinement_cli(configfile, step, component_name, tomogram, dry_run):
 
     print("-" * 60)
     verb = "Would accept" if dry_run else "Accepted"
-    print(f"{verb} iteration {step} for {accepted} surface(s).")
+    print(f"{verb} refinement for {accepted} surface(s) (requested iteration {step}; "
+          "early-converged surfaces used their last iteration).")
     if accepted:
         print("Originals backed up with a .orig.bak suffix; only canonical surfaces "
               "and refinement summaries were kept.")
@@ -239,7 +265,7 @@ def accept_refinement_cli(configfile, step, component_name, tomogram, dry_run):
         print("iteration and have no curvature graph. Re-run pycurv before any downstream")
         print("step (distances, density sampling, thickness):")
         for basename in needs_pycurv:
-            print(f"  python run_pycurv.py {configfile} {basename}.surface.vtp")
+            print(f"  morphometrics pycurv {configfile} {basename}.surface.vtp")
 
 
 if __name__ == "__main__":

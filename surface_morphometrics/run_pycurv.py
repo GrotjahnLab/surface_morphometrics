@@ -27,6 +27,8 @@ import sys
 import click
 import yaml
 
+from .config_utils import load_config
+
 from . import curvature
 
 
@@ -42,15 +44,7 @@ def run_pycurv_cli(configfile, surface, force):
     SURFACE: optional single .surface.vtp to process; if omitted, all surfaces
     in work_dir are processed.
     """
-    with open(configfile) as file:
-        config = yaml.safe_load(file)
-    if not config["work_dir"]:
-        if not config["seg_dir"]:
-            print("No working directory is specified in the config file. Please specify a working directory or a data directory.")
-            sys.exit(1)
-        else:
-            print("No working directory is specified in the config file. The data directory will be used for input and output.")
-            config["work_dir"] = config["seg_dir"]
+    config = load_config(configfile, require=("work_dir",))
 
     # Warn if configured cores exceed logical cores
     cores = config["cores"]

@@ -203,20 +203,34 @@ def cli():
 @click.option("-o", "--output", "output_path", default="config.yml",
               type=click.Path(), show_default=True,
               help="Where to write the config file.")
+@click.option("--simple/--verbose", "simple", default=False,
+              help="Write a minimal config with only the commonly-adjusted settings "
+                   "(--simple), or the fully annotated template exposing every option "
+                   "(--verbose, the default).")
 @click.option("--force", is_flag=True, default=False,
               help="Overwrite the output file if it already exists.")
-def new_config(output_path, force):
-    """Write a template config.yml into the current directory."""
+def new_config(output_path, simple, force):
+    """Write a template config.yml into the current directory.
+
+    Omitted settings fall back to documented defaults, so a --simple config is fully
+    runnable; use --verbose to see and tune every available option.
+    """
     from importlib.resources import files
 
     if os.path.exists(output_path) and not force:
         raise click.ClickException(
             f"{output_path} already exists; use --force to overwrite."
         )
-    template = files("surface_morphometrics").joinpath("config_template.yml").read_text()
+    template_name = "config_template_simple.yml" if simple else "config_template.yml"
+    template = files("surface_morphometrics").joinpath(template_name).read_text()
     with open(output_path, "w") as handle:
         handle.write(template)
-    click.echo(f"Wrote {output_path}. Edit it to point at your data and set parameters.")
+    kind = "minimal" if simple else "full"
+    click.echo(f"Wrote {kind} config to {output_path}. Edit it to point at your data "
+               "and set parameters.")
+    if simple:
+        click.echo("Omitted settings use sensible defaults; run "
+                   "`morphometrics new_config --verbose` to see every option.")
 
 
 cli.add_command(new_config)

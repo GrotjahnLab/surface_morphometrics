@@ -29,6 +29,8 @@ import click
 import numpy as np
 import yaml
 
+from .config_utils import load_config
+
 
 def mask_from_property(values, vmin=None, vmax=None):
     """Boolean mask of triangles whose property is within [vmin, vmax].
@@ -144,8 +146,7 @@ def extract_patches_cli(configfile, graph_file, label_col, prop, vmin, vmax,
     if (label_col is None) == (prop is None):
         raise click.UsageError("Specify exactly one of --by <label> or --property <name>.")
 
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
         work_dir += "/"

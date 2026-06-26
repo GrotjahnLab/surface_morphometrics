@@ -30,6 +30,8 @@ import click
 import numpy as np
 import yaml
 
+from .config_utils import load_config
+
 
 # ---------------------------------------------------------------------------
 # VTP reading (vtk)
@@ -241,8 +243,7 @@ def export_obj_cli(configfile, vtp, feature, cmap, vmin, vmax, nan_color, patter
     CONFIGFILE: path to config.yml.
     VTP: a surface .vtp to export; if omitted, all matching surfaces in work_dir.
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
         work_dir += "/"

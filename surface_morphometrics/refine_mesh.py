@@ -33,6 +33,8 @@ from glob import glob
 from pathlib import Path
 import yaml
 import click
+
+from .config_utils import load_config
 import vtk
 import multiprocessing as mp
 
@@ -45,7 +47,10 @@ from matplotlib import pyplot as plt
 from .sample_density import load_mrc, sample_density_single
 from .measure_thickness import find_mins, dual_gaussian, monogaussian
 from ._thickness_worker import (init_worker, fit_triangle_chunk_offsets,
-                               init_local_thickness_worker, compute_thickness_chunk)
+                               init_local_thickness_worker, compute_thickness_chunk,
+                               _dual_gaussian_centered, _dual_gaussian_shared_width,
+                               _seed_bilayer_center, _symmetric_fit_window,
+                               MIN_THICKNESS, MAX_THICKNESS)
 from . import curvature
 
 
@@ -838,26 +843,36 @@ def refine_mesh_iteration(graph_file, vtp_file, mrc_file, output_base, pixel_siz
         pre_disp_avg = np.mean(all_profiles_raw[valid_raw], axis=0)
 
         try:
-            ipk_g = x_positions[np.argmax(pre_disp_avg)]
             mid_g = len(pre_disp_avg) // 2
             lm_g = np.argmin(pre_disp_avg[:mid_g])
             rm_g = np.argmin(pre_disp_avg[mid_g:]) + mid_g
             ag = x_positions[lm_g + 2:rm_g - 2]
             bg = pre_disp_avg[lm_g + 2:rm_g - 2]
-            if len(ag) >= 7:
-                p0g = [0.02, ipk_g - 0.5, 1.5, 0.02, ipk_g + 0.5, 1.5, 0]
-                bounds_g = ([0.005, ipk_g - 6, 0.8, 0.005, ipk_g - 1.5, 0.8, -1],
-                            [0.04, ipk_g + 1.5, 2.2, 0.04, ipk_g + 6, 2.2, 1])
-                popt_g, _ = opt.curve_fit(dual_gaussian, ag, bg, p0g, bounds=bounds_g)
-                global_center_offset = (popt_g[1] + popt_g[4]) / 2
+            center_seed, half_seed, n_resolved = _seed_bilayer_center(ag, bg)
+            if len(ag) >= 7 and n_resolved >= 2:
+                # Center + half-separation parameterization keeps the two leaflet
+                # peaks apart so the global fit cannot collapse into one leaflet.
+                # Restrict the fit to a window around the seeded bilayer so distant
+                # density (adjacent membranes, CTF ringing) cannot pull the fit out.
+                agf, bgf = _symmetric_fit_window(ag, bg, center_seed, half_seed)
+                # Shared leaflet width: keeps asymmetric outer density from tilting
+                # the fit and shifting the bilayer center off the true midpoint.
+                p0g = [0.02, 0.02, 1.5, center_seed, half_seed, 0]
+                bounds_g = ([0.005, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
+                            [0.04,  0.04,  2.2, center_seed + 3.0, MAX_THICKNESS / 2.0,  1])
+                popt_g, _ = opt.curve_fit(_dual_gaussian_shared_width, agf, bgf, p0g, bounds=bounds_g)
+                center_g, half_g = popt_g[3], popt_g[4]
+                c1_g, c2_g = center_g - half_g, center_g + half_g
+                global_center_offset = center_g
                 global_sigma1 = popt_g[2]
-                global_sigma2 = popt_g[5]
-                global_fit_params = (popt_g[1], popt_g[2], popt_g[4], popt_g[5])
-                print(f"  Global avg profile: c1={popt_g[1]:.3f} nm, c2={popt_g[4]:.3f} nm, "
-                      f"midpoint={global_center_offset:+.3f} nm, "
-                      f"thickness={abs(popt_g[4] - popt_g[1]):.3f} nm")
+                global_sigma2 = popt_g[2]
+                global_fit_params = (c1_g, popt_g[2], c2_g, popt_g[2])
+                print(f"  Global avg profile: c1={c1_g:.3f} nm, c2={c2_g:.3f} nm, "
+                      f"center={global_center_offset:+.3f} nm, "
+                      f"thickness={2.0 * half_g:.3f} nm")
             else:
-                print("  Not enough points in fitting window for global avg dual Gaussian")
+                print(f"  Global average bilayer not resolved (n_peaks={n_resolved}) "
+                      "or too few points; per-triangle fits will self-seed.")
         except Exception as e:
             print(f"  Global avg profile dual Gaussian fit failed: {e}")
 
@@ -1099,18 +1114,11 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
     dict
         Dictionary with iteration statistics
     """
-    # Load config
-    with open(config_file) as f:
-        config = yaml.safe_load(f)
-
-    # Get directories
-    work_dir = config.get("work_dir", config.get("seg_dir", "./"))
-    if not work_dir.endswith("/"):
-        work_dir += "/"
-
-    tomo_dir = config.get("tomo_dir", "./")
-    if not tomo_dir.endswith("/"):
-        tomo_dir += "/"
+    # Load config. Refinement reads tomograms (tomo_dir) and curvature graphs
+    # (work_dir), so both are required.
+    config = load_config(config_file, require=("work_dir", "tomo_dir"))
+    work_dir = config["work_dir"]
+    tomo_dir = config["tomo_dir"]
 
     if output_dir is None:
         output_dir = work_dir

@@ -47,6 +47,8 @@ import click
 import numpy as np
 import yaml
 
+from .config_utils import load_config
+
 # ---------------------------------------------------------------------------
 # Pure-geometry helpers (no pycurv/graph-tool dependency, so they are unit
 # testable on plain numpy arrays).
@@ -408,8 +410,7 @@ def generate_patches_cli(configfile, graph_file, star_file, label, output_dir,
     STAR must hold only that tomogram's particles. For a combined multi-tomogram
     STAR, set star_tomo_column (config or --star-tomo-column) to filter by tomogram.
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     pa_config = config.get("patch_analysis", {})
     if star_tomo_column is not None:

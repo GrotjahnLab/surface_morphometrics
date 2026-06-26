@@ -26,6 +26,8 @@ from pathlib import Path
 import os
 import yaml
 import click
+
+from .config_utils import load_config
 import multiprocessing as mp
 
 from tqdm import tqdm
@@ -108,7 +110,43 @@ def find_two_peaks(x,y):
     return width, peak1, peak2
 
 
-from ._thickness_worker import init_worker, fit_triangle_chunk
+from ._thickness_worker import (init_worker, fit_triangle_chunk,
+                                _seed_bilayer_center, _compute_r_squared,
+                                _dual_gaussian_shared_width, _symmetric_fit_window,
+                                R2_THRESHOLD, MIN_THICKNESS, MAX_THICKNESS)
+
+
+def _global_bilayer_prior(thickness_set, x):
+    """Fit the whole-surface average density profile to a bilayer.
+
+    Returns ``(c1, w, c2, w)`` to seed the per-triangle recovery tier (so locally
+    merged triangles on a clearly-bilayer surface can still be measured), or ``None``
+    if the surface average does not resolve a bilayer.
+    """
+    avg = thickness_set.mean(axis=0).to_numpy() * -1
+    avg = avg - avg.min()
+    total = avg.sum()
+    if total <= 0:
+        return None
+    avg = avg / (80 / 81 * total)
+    mid = len(avg) // 2
+    lm = np.argmin(avg[:mid]); rm = np.argmin(avg[mid:]) + mid
+    a, b = x[lm + 2:rm - 2], avg[lm + 2:rm - 2]
+    if len(a) < 7:
+        return None
+    cs, hs, n_resolved = _seed_bilayer_center(a, b)
+    if n_resolved < 2:
+        return None
+    try:
+        af, bf = _symmetric_fit_window(a, b, cs, hs)
+        p, _ = opt.curve_fit(_dual_gaussian_shared_width, af, bf,
+                             [0.02, 0.02, 1.5, cs, hs, 0],
+                             bounds=([0.005, 0.005, 0.8, cs - 3, MIN_THICKNESS / 2.0, -1],
+                                     [0.04, 0.04, 2.2, cs + 3, MAX_THICKNESS / 2.0, 1]))
+    except Exception:
+        return None
+    c, half, w = p[3], p[4], p[2]
+    return (c - half, w, c + half, w)
 
 
 def process_single_surface(filename, average_radius, output_dir):
@@ -192,9 +230,21 @@ def process_single_surface(filename, average_radius, output_dir):
     chunks = [list(range(i, min(i + chunk_size, n_triangles)))
               for i in range(0, n_triangles, chunk_size)]
 
+    # Whole-surface average bilayer (prior). When the surface clearly resolves a
+    # bilayer, this lets the per-triangle recovery tier measure locally-merged
+    # triangles too; each measurement carries a resolution score so the recovered
+    # (lower-confidence, slightly thin) values stay distinguishable.
+    global_fit_params = _global_bilayer_prior(thickness_set, x)
+    if global_fit_params is not None:
+        print(f"  Global average resolved a bilayer; recovery tier enabled "
+              f"(thickness {abs(global_fit_params[2] - global_fit_params[0]):.2f} nm).")
+    else:
+        print("  Global average did not resolve a bilayer; per-triangle fits stay strict.")
+
     # Use initializer to share data once per worker (avoids repeated pickling)
     with mp.Pool(n_workers, initializer=init_worker,
-                 initargs=(thickness_arr, distances, neighbor_indices, x)) as pool:
+                 initargs=(thickness_arr, distances, neighbor_indices, x,
+                           False, None, False, global_fit_params)) as pool:
         chunk_results = list(tqdm(
             pool.imap(fit_triangle_chunk, chunks),
             total=len(chunks),
@@ -205,6 +255,7 @@ def process_single_surface(filename, average_radius, output_dir):
     results = [r for chunk in chunk_results for r in chunk]
     per_surface_thickness = [r[0] for r in results]
     per_triangle_offset = [r[1] for r in results]
+    per_triangle_resolution = [r[2] for r in results]
 
     # Plot a sample of profiles for visualization
     for i in range(0, n_triangles, 5000):
@@ -227,15 +278,34 @@ def process_single_surface(filename, average_radius, output_dir):
     mins = find_mins(avg)
 
     ipk = x[np.argmax(avg)]
-    p0 = [0.02, ipk-0.5, 1.5, 0.02, ipk+0.5, 1.5, 0]
-    bounds = ([0.005, ipk-6, 0.8, 0.005, ipk-2, 0.8, -1],
-              [0.04, ipk+2, 2.2, 0.04, ipk+6, 2.2, 1])
-
     a = x[mins[0]+2:mins[1]-2]
     b = avg[mins[0]+2:mins[1]-2]
 
-    p3, _ = opt.curve_fit(dual_gaussian, a, b, p0, bounds=bounds)
-    width = np.abs(p3[1]-p3[4])
+    # Fit the whole-surface average with the same shared-width, symmetric-window model
+    # that drives the per-triangle measurements: two equal-width leaflets symmetric
+    # about the center, so an asymmetric baseline cannot tilt the components and bias
+    # the center. Repackaged into the legacy (h1, c1, w1, h2, c2, w2, o) layout so the
+    # plot/CSV below are unchanged -- with w1 == w2 this equals dual_gaussian exactly.
+    # Quality gate as for the per-triangle fit: width is NaN unless the average
+    # resolves two leaflets and the fit is good and physical.
+    center_seed, half_seed, avg_n_resolved = _seed_bilayer_center(a, b)
+    try:
+        af, bf = _symmetric_fit_window(a, b, center_seed, half_seed)
+        pN, _ = opt.curve_fit(
+            _dual_gaussian_shared_width, af, bf,
+            [0.02, 0.02, 1.5, center_seed, half_seed, 0.0],
+            bounds=([0.005, 0.005, 0.8, center_seed - 3.0, MIN_THICKNESS / 2.0, -1],
+                    [0.04, 0.04, 2.2, center_seed + 3.0, MAX_THICKNESS / 2.0, 1]))
+        h1, h2, w, center, half, o = pN
+        p3 = np.array([h1, center - half, w, h2, center + half, w, o])
+        width = 2.0 * half
+        r2_avg = _compute_r_squared(bf, _dual_gaussian_shared_width(af, *pN))
+        if (avg_n_resolved < 2 or r2_avg <= R2_THRESHOLD
+                or not (MIN_THICKNESS <= width <= MAX_THICKNESS)):
+            width = np.nan
+    except Exception:
+        p3 = np.array([0.0, ipk, 1.0, 0.0, ipk, 1.0, 0.0])
+        width = np.nan
 
     # Update graph with thickness properties
     average_width_prop = tg.graph.new_vertex_property("float")
@@ -244,10 +314,16 @@ def process_single_surface(filename, average_radius, output_dir):
     thick.a = per_surface_thickness
     offset = tg.graph.new_vertex_property("float")
     offset.a = per_triangle_offset
+    # Per-triangle reliability flag for `thickness`: 1 = two leaflets cleanly
+    # resolved (high confidence); < MIN_LEAFLET_HEIGHT_RATIO (0.5) = thickness only
+    # obtained by prior recovery (lower confidence, reads slightly thin).
+    bilayer_resolution = tg.graph.new_vertex_property("float")
+    bilayer_resolution.a = per_triangle_resolution
 
     tg.graph.vp.average_width = average_width_prop
     tg.graph.vp.thickness = thick
     tg.graph.vp.offset = offset
+    tg.graph.vp.bilayer_resolution = bilayer_resolution
     tg.graph.save(graph_file_final)
 
     surf = tg.graph_to_triangle_poly()
@@ -441,8 +517,7 @@ def measure_thickness_cli(configfile, output, average_radius):
 
     CONFIGFILE: Path to the config.yml file
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     # Override config settings if specified on command line
     if average_radius is not None:

@@ -31,6 +31,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from .config_utils import load_config
+
 # Candidate region-label columns and the region_type they map to. Whichever are
 # present in a CSV get aggregated (unless --label-col forces one).
 LABEL_COLUMNS = {
@@ -165,8 +167,7 @@ def patch_statistics_cli(configfile, csv_file, properties, label_col, pattern,
 
     CONFIGFILE: path to config.yml.
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     pa_config = config.get("patch_analysis", {})
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))

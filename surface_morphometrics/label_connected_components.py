@@ -28,6 +28,8 @@ import click
 import numpy as np
 import yaml
 
+from .config_utils import load_config
+
 
 def label_component_numbers(component_index, min_size=0):
     """Convert raw component indices into 1-based ids ordered by size.
@@ -104,8 +106,7 @@ def label_components_cli(configfile, graph_file, label, output_dir, min_size):
 
     CONFIGFILE: path to config.yml.
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     pa_config = config.get("patch_analysis", {})
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))

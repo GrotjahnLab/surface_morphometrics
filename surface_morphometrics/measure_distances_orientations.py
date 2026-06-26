@@ -25,6 +25,8 @@ import sys
 import click
 import yaml
 
+from .config_utils import load_config, resolve_distance_targets
+
 from . import intradistance_verticality
 from . import interdistance_orientation
 
@@ -41,18 +43,7 @@ def distances_orientations_cli(configfile, segmentation, force):
     SEGMENTATION: optional single segmentation .mrc whose graphs to process; if
     omitted, all segmentations in seg_dir are processed.
     """
-    with open(configfile) as file:
-        config = yaml.safe_load(file)
-    if not config["seg_dir"]:
-        print("seg_dir not specified in config.yml")
-        sys.exit(1)
-    elif not config["seg_dir"].endswith("/"):
-        config["seg_dir"] += "/"
-    if not config["work_dir"]:
-        print("work_dir not specified in config.yml - seg_dir will be used for output")
-        config["work_dir"] = config["seg_dir"]
-    elif not config["work_dir"].endswith("/"):
-        config["work_dir"] += "/"
+    config = load_config(configfile, require=("seg_dir", "work_dir", "segmentation_values"))
 
     # See if a specific file was specified
     if segmentation is None:
@@ -74,15 +65,27 @@ def distances_orientations_cli(configfile, segmentation, force):
         segmentation_files = [segmentation]
 
     dist_settings = config["distance_and_orientation_measurements"]
+
+    # intra/inter default to all-vs-all when omitted (every surface, every pair);
+    # an explicit empty (intra: [] / inter: {}) opts out. See resolve_distance_targets.
+    labels = list(config["segmentation_values"].keys())
+    intra, inter, intra_defaulted, inter_defaulted = resolve_distance_targets(dist_settings, labels)
+    if intra_defaulted:
+        print(f"No 'intra' configured - defaulting to all surfaces: {intra}")
+        print("  (set 'intra: []' under distance_and_orientation_measurements to skip)")
+    if inter_defaulted:
+        print("No 'inter' configured - defaulting to all surface pairs.")
+        print("  (set 'inter: {}' under distance_and_orientation_measurements to skip)")
+
     print("Distance and orientation settings:")
     print("Will measure intra-surface distances for:")
-    if dist_settings["intra"]:
-        print(dist_settings["intra"])
+    if intra:
+        print(intra)
         if dist_settings["verticality"]:
             print("Will also measure verticality for those surfaces")
-    if dist_settings["inter"]:
+    if inter:
         print("Will make (bi-directional) inter-surface distance measurements for:")
-        for surface, comparison in dist_settings["inter"].items():
+        for surface, comparison in inter.items():
             print(surface + f": {comparison}")
         if dist_settings["relative_orientation"]:
             print("Will also measure relative orientation for those surfaces")
@@ -93,8 +96,8 @@ def distances_orientations_cli(configfile, segmentation, force):
         file_base = file[:-4]
         print(file_base)
         # Intra-surface distances
-        if dist_settings["intra"]:
-            for label in dist_settings["intra"]:
+        if intra:
+            for label in intra:
                 graphname = config["work_dir"] + file_base + "_" + label + ".AVV_rh" + str(radius_hit) + ".gt"
                 if not os.path.isfile(graphname):
                     print("No file found for " + graphname)
@@ -110,8 +113,8 @@ def distances_orientations_cli(configfile, segmentation, force):
                                                                  tolerance=dist_settings["tolerance"],
                                                                  exportcsv=True)
         # Inter-surface distances
-        if dist_settings["inter"]:
-            for label1, comparison in dist_settings["inter"].items():
+        if inter:
+            for label1, comparison in inter.items():
                 graphname1 = config["work_dir"] + file_base + "_" + label1 + ".AVV_rh" + str(radius_hit) + ".gt"
                 if not os.path.isfile(graphname1):
                     print("No file found for " + graphname1)
