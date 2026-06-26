@@ -25,6 +25,8 @@ import sys
 import click
 import yaml
 
+from .config_utils import load_config
+
 from . import intradistance_verticality
 from . import interdistance_orientation
 
@@ -41,18 +43,7 @@ def distances_orientations_cli(configfile, segmentation, force):
     SEGMENTATION: optional single segmentation .mrc whose graphs to process; if
     omitted, all segmentations in seg_dir are processed.
     """
-    with open(configfile) as file:
-        config = yaml.safe_load(file)
-    if not config["seg_dir"]:
-        print("seg_dir not specified in config.yml")
-        sys.exit(1)
-    elif not config["seg_dir"].endswith("/"):
-        config["seg_dir"] += "/"
-    if not config["work_dir"]:
-        print("work_dir not specified in config.yml - seg_dir will be used for output")
-        config["work_dir"] = config["seg_dir"]
-    elif not config["work_dir"].endswith("/"):
-        config["work_dir"] += "/"
+    config = load_config(configfile, require=("seg_dir", "work_dir"))
 
     # See if a specific file was specified
     if segmentation is None:

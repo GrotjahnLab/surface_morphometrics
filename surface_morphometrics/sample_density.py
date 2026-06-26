@@ -23,6 +23,8 @@ from sys import argv
 import yaml
 import click
 
+from .config_utils import load_config
+
 
 def load_graph_data(filename, voxsize):
     """
@@ -281,26 +283,11 @@ def run_sample_density(configfile, mrcfile=None, sample_spacing_override=None, s
     scan_range_override : float or None
         Override scan_range from config
     """
-    # Load config
-    with open(configfile) as file:
-        config = yaml.safe_load(file)
-
-    # Validate and set up directories
-    # tomo_dir contains the tomogram MRC files
-    if not config.get("tomo_dir"):
-        print("tomo_dir not specified in config.yml")
-        return
+    # Load config. tomo_dir (tomogram MRCs) and work_dir (curvature CSVs + sampling
+    # output) are both required for density sampling.
+    config = load_config(configfile, require=("work_dir", "tomo_dir"))
     tomo_dir = config["tomo_dir"]
-    if not tomo_dir.endswith("/"):
-        tomo_dir += "/"
-
-    # work_dir contains the curvature CSV files and will store sampling output
-    if not config.get("work_dir"):
-        print("work_dir not specified in config.yml")
-        return
     work_dir = config["work_dir"]
-    if not work_dir.endswith("/"):
-        work_dir += "/"
 
     # Get density sampling settings from config (falls back to thickness_measurements for compatibility)
     density_config = config.get("density_sampling", config.get("thickness_measurements", {}))

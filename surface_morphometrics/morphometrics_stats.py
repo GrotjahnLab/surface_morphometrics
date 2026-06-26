@@ -16,6 +16,8 @@ import pickle
 import click
 import csv
 import yaml
+
+from .config_utils import load_config
 import matplotlib
 matplotlib.use("agg")
 import matplotlib.pyplot as plt
@@ -591,32 +593,21 @@ def bootstrap(sets, areas, conditions, morphologies, reps=1000, basename="bootst
 @click.argument('experimentname', required=True)
 def assemble_experiment_pickle(configfile, experimentname):
     """Assemble a pickle file for an experiment from all the tomos in the config folder."""
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
-        if not config["seg_dir"]:
-            print("seg_dir not specified in config.yml")
-            exit()
-        elif not config["seg_dir"].endswith("/"):
-            config["seg_dir"] += "/"
-        if not config["work_dir"]:
-            print("work_dir not specified in config.yml - seg_dir will be used for output")
-            config["work_dir"] = config["seg_dir"]
-        elif not config["work_dir"].endswith("/"):
-            config["work_dir"] += "/"
-        
-        output_file = config["work_dir"] + experimentname+".pkl"
+    config = load_config(configfile, require=("seg_dir", "work_dir"))
 
-        input_files = glob.glob(config["seg_dir"] + "*.mrc")
-        input_names = [os.path.basename(x)[:-4] for x in input_files]
-        rh = config["curvature_measurements"]["radius_hit"]
-        extension = ".AVV_rh{}.csv".format(rh)
-        labels = list(config["segmentation_values"].keys())
-        experiment = Experiment(experimentname)
+    output_file = config["work_dir"] + experimentname+".pkl"
 
-        experiment.add_tomograms(input_names, labels, config["work_dir"], extension) 
-        with open(output_file, "wb") as f:
-            pickle.dump(experiment, f)
-        print(output_file) 
+    input_files = glob.glob(config["seg_dir"] + "*.mrc")
+    input_names = [os.path.basename(x)[:-4] for x in input_files]
+    rh = config["curvature_measurements"]["radius_hit"]
+    extension = ".AVV_rh{}.csv".format(rh)
+    labels = list(config["segmentation_values"].keys())
+    experiment = Experiment(experimentname)
+
+    experiment.add_tomograms(input_names, labels, config["work_dir"], extension)
+    with open(output_file, "wb") as f:
+        pickle.dump(experiment, f)
+    print(output_file)
 
 
 

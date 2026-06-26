@@ -26,6 +26,8 @@ from pathlib import Path
 import os
 import yaml
 import click
+
+from .config_utils import load_config
 import multiprocessing as mp
 
 from tqdm import tqdm
@@ -515,8 +517,7 @@ def measure_thickness_cli(configfile, output, average_radius):
 
     CONFIGFILE: Path to the config.yml file
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     # Override config settings if specified on command line
     if average_radius is not None:

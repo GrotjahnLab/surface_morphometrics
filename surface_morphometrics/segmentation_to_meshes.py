@@ -22,6 +22,8 @@ import glob
 import click
 import yaml
 
+from .config_utils import load_config, require_keys
+
 from . import mrc2xyz
 from . import ply2vtp
 
@@ -62,8 +64,7 @@ def make_meshes_cli(configfile, segmentation):
     MRC files in seg_dir are processed.
     """
     # Check for a seg dir and a work dir
-    with open(configfile) as file:
-        config = yaml.safe_load(file)
+    config = load_config(configfile)
 
     # Warn about renamed config keys (see README). Older config files used
     # different names for these settings and will no longer work as-is.
@@ -81,14 +82,9 @@ def make_meshes_cli(configfile, segmentation):
         print("See the README for details on the current configuration format.")
         print("=" * 70)
 
-    if not config.get("seg_dir"):
-        print("seg_dir not specified in config.yml")
-        sys.exit(1)
-    elif not config["seg_dir"].endswith("/"):
-        config["seg_dir"] += "/"
-    if not config["work_dir"]:
-        print("work_dir not specified in config.yml - seg_dir will be used for output")
-        config["work_dir"] = config["seg_dir"]
+    # Validate after the rename warning above, so a user still on the old key names
+    # sees the migration hint rather than only a bare "missing seg_dir".
+    require_keys(config, ("seg_dir", "work_dir"), configfile)
 
     # See if a specific file was specified
     if segmentation is None:

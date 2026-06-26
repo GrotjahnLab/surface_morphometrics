@@ -33,6 +33,8 @@ from glob import glob
 from pathlib import Path
 import yaml
 import click
+
+from .config_utils import load_config
 import vtk
 import multiprocessing as mp
 
@@ -1112,18 +1114,11 @@ def refine_mesh(config_file, iterations=5, damping_factor=0.6, output_dir=None,
     dict
         Dictionary with iteration statistics
     """
-    # Load config
-    with open(config_file) as f:
-        config = yaml.safe_load(f)
-
-    # Get directories
-    work_dir = config.get("work_dir", config.get("seg_dir", "./"))
-    if not work_dir.endswith("/"):
-        work_dir += "/"
-
-    tomo_dir = config.get("tomo_dir", "./")
-    if not tomo_dir.endswith("/"):
-        tomo_dir += "/"
+    # Load config. Refinement reads tomograms (tomo_dir) and curvature graphs
+    # (work_dir), so both are required.
+    config = load_config(config_file, require=("work_dir", "tomo_dir"))
+    work_dir = config["work_dir"]
+    tomo_dir = config["tomo_dir"]
 
     if output_dir is None:
         output_dir = work_dir

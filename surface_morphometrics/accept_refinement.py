@@ -32,6 +32,8 @@ from pathlib import Path
 import click
 import yaml
 
+from .config_utils import load_config
+
 
 def _iterations_by_surface(work_dir):
     """Map each surface basename to its sorted available refinement iterations.
@@ -201,8 +203,7 @@ def accept_refinement_cli(configfile, step, component_name, tomogram, dry_run):
     graph, the command warns that pycurv must be re-run on the promoted surface
     before any downstream analysis.
     """
-    with open(configfile) as f:
-        config = yaml.safe_load(f)
+    config = load_config(configfile, require=("work_dir",))
 
     work_dir = config.get("work_dir", config.get("seg_dir", "./"))
     if not work_dir.endswith("/"):
