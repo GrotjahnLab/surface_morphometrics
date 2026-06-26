@@ -10,6 +10,7 @@ import yaml
 from surface_morphometrics import config_utils as cu
 
 TEMPLATE = os.path.join(os.path.dirname(cu.__file__), "config_template.yml")
+SIMPLE_TEMPLATE = os.path.join(os.path.dirname(cu.__file__), "config_template_simple.yml")
 
 
 def _write(text):
@@ -35,6 +36,48 @@ def test_defaults_match_template():
                 assert tmpl[section].get(key) == value, f"{section}.{key}"
         else:
             assert tmpl.get(section) == default, section
+
+
+def test_simple_template_values_match_defaults():
+    # Any value the --simple template hard-codes that DEFAULTS also defines must agree,
+    # so the minimal config never silently disagrees with the documented defaults.
+    with open(SIMPLE_TEMPLATE) as handle:
+        simple = yaml.safe_load(handle)
+    for section, value in simple.items():
+        if section not in cu.DEFAULTS:
+            continue
+        if isinstance(cu.DEFAULTS[section], dict) and isinstance(value, dict):
+            for key, sub in value.items():
+                if key in cu.DEFAULTS[section]:
+                    assert cu.DEFAULTS[section][key] == sub, f"{section}.{key}"
+        else:
+            assert cu.DEFAULTS[section] == value, section
+
+
+def test_simple_template_loads_and_fills_omitted_sections():
+    c = cu.load_config(SIMPLE_TEMPLATE,
+                       require=("seg_dir", "work_dir", "tomo_dir", "segmentation_values"))
+    # listed settings are present
+    assert c["surface_generation"]["target_area"] == 1.0
+    assert c["thickness_measurements"]["average_radius"] == 12
+    assert c["mesh_refinement"]["xcorr_iterations"] == [1, 2, 3]
+    # sections the simple template omits are still filled from defaults
+    assert c["curvature_measurements"]["radius_hit"] == 9
+    assert c["density_sampling"]["scan_range"] == 10
+    assert c["patch_analysis"]["patch_radius"] == 12
+
+
+def test_new_config_writes_simple_and_full_templates():
+    from click.testing import CliRunner
+    from surface_morphometrics import cli as cli_mod
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        assert runner.invoke(cli_mod.new_config, ["--simple", "-o", "s.yml"]).exit_code == 0
+        simple = yaml.safe_load(open("s.yml"))
+        assert "mesh_refinement" in simple and "curvature_measurements" not in simple
+        assert runner.invoke(cli_mod.new_config, ["--verbose", "-o", "f.yml"]).exit_code == 0
+        full = yaml.safe_load(open("f.yml"))
+        assert "curvature_measurements" in full and "patch_analysis" in full
 
 
 def test_trailing_slashes_added():

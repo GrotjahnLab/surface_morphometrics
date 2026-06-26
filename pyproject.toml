@@ -57,4 +57,4 @@ morphometrics = "surface_morphometrics.cli:main"
 include = ["surface_morphometrics*"]
 
 [tool.setuptools.package-data]
-surface_morphometrics = ["config_template.yml"]
+surface_morphometrics = ["config_template.yml", "config_template_simple.yml"]
