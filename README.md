@@ -104,6 +104,7 @@ Each step reads a `config.yml` and writes its outputs into the configured `work_
 | # | Step | Command |
 |---|------|---------|
 | 0 | Create a config | `morphometrics new_config` |
+| – | *(optional)* [Validate the setup](#checking-your-setup-and-progress) | `morphometrics validate config.yml` |
 | 1 | Segmentations → meshes | `morphometrics make_meshes config.yml` |
 | 2 | Curvature (pycurv) | `morphometrics pycurv config.yml` |
 | 3 | *(optional)* [Mesh refinement](#mesh-refinement-optional) | `morphometrics refine_mesh config.yml` → `accept_refinement` |
@@ -114,9 +115,19 @@ Each step reads a `config.yml` and writes its outputs into the configured `work_
 Most steps also accept a single input (e.g. `morphometrics pycurv config.yml TE1_OMM.surface.vtp`, `morphometrics distances_orientations config.yml TE1.mrc`) so you can parallelize per tomogram on a cluster.
 
 ### Configuration
-`morphometrics new_config` writes a fully-commented `config.yml` into the current directory (`-o NAME` for a different name); edit it for your project. A few starting tips:
+`morphometrics new_config` writes a fully-commented `config.yml` into the current directory (`-o NAME` for a different name); edit it for your project. For a stripped-down starting point, `morphometrics new_config --simple` writes a minimal config with just the most commonly-adjusted settings — directories, `segmentation_values`, cores, the main meshing options, and the thickness/refinement averaging radii; everything omitted falls back to documented defaults, so a partial config still runs. A few starting tips:
 - For higher-quality meshes with near-equilateral triangles, set `isotropic_remesh: true` and `simplify: false` in `surface_generation`. `target_area` of 1.0–3.0 nm² works well (smaller = finer but slower).
 - Set the directories and labels: `seg_dir`, `tomo_dir`, `work_dir`, and `segmentation_values` (the label value → name mapping for your segmentation).
+
+### Checking your setup and progress
+Two read-only helpers make it easy to sanity-check a run:
+- `morphometrics validate config.yml` — *before you start*, confirms the input folders exist, that every segmentation has a matching tomogram (using the shared-name-prefix convention the pipeline relies on, so name mismatches surface early), and which configured `segmentation_values` labels actually appear in each segmentation.
+- `morphometrics status config.yml` — *at any time*, prints a per-segmentation summary of what has been computed — mesh, curvature, refinement (and the accepted iteration), and which distance / orientation / thickness measurements exist — derived from the files in `work_dir`. Add `-o status.txt` to also write it to a file. For example:
+  ```
+  YTC041_1_lam4_2_ts_002_labels   [tomogram ✓]
+    IMM   mesh ✓  curv ✓  refine accepted@iter4  self-dist ✓  vert ✓  inter OMM  thickness ✓
+    OMM   mesh ✓  curv ✓  refine accepted@iter4  self-dist ✓  vert ✓  inter IMM  thickness ✓
+  ```
 
 ### Data organization for thickness and refinement
 Thickness (step 5) and refinement (step 3) read the **raw tomogram** density, not just the segmentation. Three directories in `config.yml` control this:
@@ -258,7 +269,9 @@ Two config keys were also renamed: `data_dir` → `seg_dir`, and `max_triangles`
 | `python morphometrics_stats.py config.yml name` | `morphometrics stats config.yml name` |
 | `python single_file_histogram.py f.csv -n feat` | `morphometrics histogram f.csv -n feat` |
 | `python single_file_2d.py f.csv -n1 a -n2 b` | `morphometrics hist2d f.csv -n1 a -n2 b` |
-| *(new)* | `morphometrics new_config` — write a starter `config.yml` |
+| *(new)* | `morphometrics new_config` — write a starter `config.yml` (`--simple` for a minimal one) |
+| *(new)* | `morphometrics validate` — check a config and its seg/tomo folders before running |
+| *(new)* | `morphometrics status` — summarize what has been computed for each segmentation |
 
 ---
 

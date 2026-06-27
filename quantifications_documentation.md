@@ -228,4 +228,16 @@
 
 ### `Thickness`
 - **Description:**  
-  A per-triangle value representing the local thickness of a single membrane sheet. It is calculated by measuring the shortest distance from a triangle's center along its normal vector until the surface is intersected again.
+  The per-triangle membrane bilayer thickness (the leaflet-to-leaflet separation), in the surface's distance units. It is measured (by `morphometrics measure_thickness`) by sampling the raw tomogram density along each triangle's normal vector and fitting the two leaflet density peaks with a dual Gaussian; the thickness is the distance between the fitted leaflet centers. Triangles where a bilayer cannot be resolved are reported as NaN. See also `bilayer_resolution`.
+
+---
+
+### `offset`
+- **Description:**  
+  The signed distance (along the triangle's normal) from the triangle center to the fitted bilayer midplane, from the same `measure_thickness` fit. A nonzero value means the mesh vertex sits slightly off the density-defined membrane center.
+
+---
+
+### `bilayer_resolution`
+- **Description:**  
+  A per-triangle reliability flag in the range [0, 1] for the reported `Thickness`: how clearly the two bilayer leaflets are resolved in the local density profile. A value near 1 means two cleanly separated leaflets; values toward 0 mean the leaflets are merged into a single peak and the thickness was recovered with help from the whole-surface average fit (and tends to read slightly thin). A practical cutoff is 0.5 — values ≥ 0.5 are high-confidence measurements and values below 0.5 are lower-confidence. NaN where no thickness was measured.
