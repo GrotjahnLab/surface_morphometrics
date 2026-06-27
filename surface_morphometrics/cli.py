@@ -26,6 +26,8 @@ _LAZY_COMMANDS = {
                       "Download example data for testing (small Zenodo set or full EMPIAR data)."),
     "validate": ("surface_morphometrics.validate:validate_cli",
                  "Check a config and its seg/tomo folders are consistent before running."),
+    "status": ("surface_morphometrics.status:status_cli",
+               "Summarize what has been computed for each segmentation in the dataset."),
     "make_meshes": ("surface_morphometrics.segmentation_to_meshes:make_meshes_cli",
                     "Convert segmentation MRCs into membrane meshes (step 1)."),
     "pycurv": ("surface_morphometrics.run_pycurv:run_pycurv_cli",
@@ -62,7 +64,7 @@ _LAZY_COMMANDS = {
 # so the standard pipeline order is obvious. `new_config` is registered eagerly
 # but listed here for display.
 _SECTIONS = [
-    ("Setup", ["new_config", "validate", "fetch_example"]),
+    ("Setup", ["new_config", "validate", "fetch_example", "status"]),
     ("Pipeline (run in this order)",
      ["make_meshes", "pycurv", "distances_orientations", "sample_density", "measure_thickness"]),
     ("Optional mesh refinement (after pycurv, before distances)",
