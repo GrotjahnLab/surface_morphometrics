@@ -156,6 +156,21 @@ def validate_cli(configfile):
         if extra:
             warn(f"label value(s) present but not in segmentation_values: {extra}")
 
+    # The other direction: tomograms that match no segmentation. A tomogram is "used"
+    # if some segmentation name starts with it (the same prefix rule); an unmatched one
+    # is usually a name mismatch and will simply be skipped by the pipeline.
+    if tomo_present:
+        seg_bases = [os.path.basename(s)[:-4] for s in seg_files]
+        click.echo(f"\nTomograms ({len(tomo_bases)} found):")
+        orphans = [t for t in tomo_bases if not any(s.startswith(t) for s in seg_bases)]
+        if orphans:
+            for t in orphans:
+                warn(f"tomogram {t}.mrc matches no segmentation in {seg_dir} (no "
+                     "segmentation name starts with it); it will not be used -- check "
+                     "for a name mismatch")
+        else:
+            ok("every tomogram matches a segmentation")
+
     return _finish(errors, warnings)
 
 

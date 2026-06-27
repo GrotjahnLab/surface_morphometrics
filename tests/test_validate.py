@@ -58,6 +58,20 @@ def test_validate_warns_on_name_mismatch(tmp_path):
     assert "no matching tomogram" in r.output
 
 
+def test_validate_warns_on_orphan_tomogram(tmp_path):
+    seg, tomo = tmp_path / "segs", tmp_path / "tomos"
+    seg.mkdir(); tomo.mkdir()
+    _write_seg(seg / "TS1_labels.mrc", [1])
+    _write_seg(tomo / "TS1.mrc", [0])         # matched by the segmentation
+    _write_seg(tomo / "EXTRA.mrc", [0])       # orphan: no segmentation starts with it
+    cfg = tmp_path / "c.yml"
+    _config(cfg, seg, {"IMM": 1}, tomo_dir=tomo)
+    r = CliRunner().invoke(validate_cli, [str(cfg)])
+    assert r.exit_code == 0
+    assert "EXTRA.mrc matches no segmentation" in r.output
+    assert "matching tomogram: TS1.mrc" in r.output     # the matched one still reported
+
+
 def test_validate_warns_on_unmapped_label_value(tmp_path):
     seg = tmp_path / "segs"
     seg.mkdir()
