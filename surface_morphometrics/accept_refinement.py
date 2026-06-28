@@ -164,7 +164,16 @@ def accept_one(work_dir, basename, step, radius_hit, dry_run):
             continue
         _remove(path, dry_run)
 
-    # 4. Warn if the promoted surface still needs a curvature graph.
+    # 4. Record which iteration was accepted (the per-iteration files are gone now,
+    #    so this one-line marker is how `morphometrics status` reports the step).
+    if not dry_run:
+        with open(f"{work_dir}{basename}.accepted_iter", "w") as handle:
+            handle.write(f"{step}\n")
+    else:
+        print(f"  [dry-run] would record accepted iteration {step} "
+              f"in {basename}.accepted_iter")
+
+    # 5. Warn if the promoted surface still needs a curvature graph.
     if not has_avv:
         print(f"  WARNING: iteration {step} was a lightweight (xcorr) iteration with no "
               f"curvature graph.")
